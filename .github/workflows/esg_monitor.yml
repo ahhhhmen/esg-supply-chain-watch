@@ -28,7 +28,7 @@ jobs:
     - name: Install Engineering Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyyaml requests beautifulsoup4 deep-translator
+        pip install pyyaml requests beautifulsoup4 deep-translator pandas
 
     # 4. 执行全球情报检索与提纯脚本
     - name: Execute ESG Intelligence Agent

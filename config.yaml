@@ -1,0 +1,93 @@
+# ==========================================
+# 全球 ESG 与供应链合规监控智能体 配置文件
+# ==========================================
+
+# 1. 监控企业矩阵（使用短名进行精准搜索，全称用于报告展示）
+companies:
+  - id: huayou
+    short_name_zh: 华友钴业
+    short_name_en: Huayou Cobalt
+    full_name_zh: 浙江华友钴业股份有限公司
+    full_name_en: Zhejiang Huayou Cobalt Co., Ltd.
+  - id: cmoc
+    short_name_zh: 洛阳钼业
+    short_name_en: CMOC
+    full_name_zh: 洛阳栾川钼业集团股份有限公司
+    full_name_en: CMOC Group Limited
+  - id: ganfeng
+    short_name_zh: 赣锋锂业
+    short_name_en: Ganfeng Lithium
+    full_name_zh: 赣锋锂业股份有限公司
+    full_name_en: Ganfeng Lithium Co., Ltd.
+  - id: cngr
+    short_name_zh: 中伟股份
+    short_name_en: CNGR
+    full_name_zh: 中伟新材料股份有限公司
+    full_name_en: CNGR Advanced Material Co., Ltd.
+  - id: gem
+    short_name_zh: 格林美
+    short_name_en: GEM
+    full_name_zh: 格林美股份有限公司
+    full_name_en: GEM Co., Ltd.
+  - id: catl
+    short_name_zh: 宁德时代
+    short_name_en: CATL
+    full_name_zh: 宁德时代新能源科技股份有限公司
+    full_name_en: Contemporary Amperex Technology Co., Limited
+
+# 2. 监控主题矩阵（分层监控：自愿标准 + 强制监管 + 事件型突发风险）
+topics:
+  # === 第一梯队：自愿性行业倡议标准（查准：审计与认证动态） ===
+  - id: rmi
+    zh: RMI 负责任矿产
+    en: Responsible Minerals Initiative RMI
+    id: RMI Mineral Bertanggung Jawab
+    fr: RMI minéraux responsables
+  - id: rmap
+    zh: RMAP 保证流程
+    en: RMAP Assurance
+    id: RMAP Assurance
+    fr: RMAP Assurance
+  - id: irma
+    zh: IRMA 负责任采矿
+    en: IRMA Mining
+    id: IRMA Pertambangan
+    fr: IRMA exploitation minière
+
+  # === 第二梯队：核心法律合规监管（查准：供应链强制传导风险） ===
+  - id: csddd
+    zh: CSDDD 供应链尽责
+    en: CSDDD Due Diligence
+    id: CSDDD Uji Tuntas
+    fr: CSDDD devoir de vigilance
+  - id: csrd
+    zh: CSRD 可持续报告
+    en: CSRD Sustainability
+    id: CSRD Keberlanjutan
+    fr: CSRD durabilité
+
+  # === 第三梯队：泛化可持续议题（查全：日常运营与宏观战略） ===
+  - id: sustainable_sc
+    zh: 可持续供应链
+    en: Sustainable Supply Chain
+    id: Rantai Pasok Berkelanjutan
+    fr: Chaîne d'approvisionnement durable
+
+  # === 第四梯队：事件驱动型突发风险（领先指标：利用布尔逻辑降低请求压力） ===
+  - id: controversy_events
+    zh: (罢工 OR 抗议 OR 原住民 OR 劳工 OR 污染 OR 事故)
+    en: (strike OR protest OR indigenous OR labor OR pollution OR accident)
+    id: (mogok OR protes OR masyarakat adat OR buruh OR polusi OR kecelakaan)
+    fr: (grève OR manifestation OR autochtones OR travail OR pollution OR accident)
+
+# 3. 系统运行控制参数
+languages: ["zh", "en", "id", "fr"]
+days_limit: 14
+
+# 4. 噪音过滤控制（排除纯财经、股市、财报等非 ESG 噪音）
+  # 增加针对 GEM 等通用词的强力负面过滤
+negative_filters:
+  zh: "-股票 -股市 -收盘 -涨停 -跌停 -财报 -分红 -大盘"
+  en: "-stock -shares -market -earnings -dividend -investors -hidden -draft -nfl"
+  id: "-saham -pasar -investor -dividen -bursa -hidden"
+  fr: "-action -bourse -marché -bénéfice -dividende -théâtrale"

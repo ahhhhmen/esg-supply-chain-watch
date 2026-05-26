@@ -32,6 +32,8 @@ jobs:
 
     # 4. 执行全球情报检索与提纯脚本
     - name: Execute ESG Intelligence Agent
+      env:
+        DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
       run: |
         python esg_intelligence_agent.py
 

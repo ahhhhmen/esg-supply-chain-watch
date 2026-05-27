@@ -1,6 +1,6 @@
 # 🌍 ESG 全球情报监控报告
 
-> 📅 **生成时间**: 2026-05-26 15:34:23
+> 📅 **生成时间**: 2026-05-27 00:33:02
 > 📊 **情报总数**: 4 条 | 企业: 2 家 | 主题: 2 类 | 语种: 2 种 | 来源: 1 家
 > 📆 **覆盖时段**: 2026-05-13 ~ 2026-05-26（14 天窗口）
 
@@ -44,11 +44,11 @@
 
 ---
 
-### [GEM resserre K3, les travailleurs doivent être en sécurité jusqu'à leur retour - VOI.ID](https://news.google.com/rss/articles/CBMiSEFVX3lxTE91OG9JS19ad1dPblYtT3RUNUtuMFkxNm81NWRnVXp5d21rSzFkZFMtaWVqMFRKWUNlSzBpUDNjV0JBZDM3YS1iZtIBQkFVX3lxTFA0cER4SjBIcWsyMGg3TWZqM0xKWnZpcTVPdk1FSjdQN1ZZQlgxemdTa1F2ajlsSVZJUkM4ekdnVFJmdw?oc=5)
+### [GEM resserre K3, les travailleurs doivent être en sécurité jusqu'à leur retour - VOI.id](https://news.google.com/rss/articles/CBMiSEFVX3lxTE91OG9JS19ad1dPblYtT3RUNUtuMFkxNm81NWRnVXp5d21rSzFkZFMtaWVqMFRKWUNlSzBpUDNjV0JBZDM3YS1iZtIBQkFVX3lxTFA0cER4SjBIcWsyMGg3TWZqM0xKWnZpcTVPdk1FSjdQN1ZZQlgxemdTa1F2ajlsSVZJUkM4ekdnVFJmdw?oc=5)
 
-- **标题翻译**: GEM收紧K3，工人返回之前必须安全 - VOI.ID
-- **中文摘要**: GEM收紧K3，工人返回之前必须安全 VOI.ID
-- **情报属性**: 🌐 源语言: Français | 📰 来源: Unknown | 🕒 日期: 2026-05-18
+- **标题翻译**: GEM收紧K3，工人返回之前必须安全 - VOI.id
+- **中文摘要**: GEM收紧K3，工人返回之前必须安全 VOI.id
+- **情报属性**: 🌐 源语言: Français | 📰 来源: Unknown | 🕒 日期: 2026-05-15
 
 ---
 

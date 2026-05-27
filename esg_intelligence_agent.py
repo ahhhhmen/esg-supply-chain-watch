@@ -1,36 +1,23 @@
 #!/usr/bin/env python3
 """
-ESG 情报监控智能体 v6 — 高级搜索语法 + 实体出现校验（抗噪升级）
+ESG 情报监控智能体 v7 — DeepSeek 大模型语义降噪 + 智能摘要
 ═══════════════════════════════════════════════════════════════════════════════
 架构说明
 ────────
 • AgentConfig.from_yaml()        — 读取多维字典结构的 config.yaml，含 negative_filters
 • AgentConfig.build_query_matrix() — 生成带精确引号+负面词的高级搜索查询矩阵
-• EntityFilter.passes()          — 【新】实体出现校验：正文/标题必须含公司短名
+• EntityFilter.passes()          — 实体出现校验：正文/标题必须含公司短名
 • NewsFetcher                    — Google RSS / Bing RSS 双通道抓取
 • ContentExtractor               — 向原始 URL 深度抓取正文前 200 字
-• TranslationEngine              — deep_translator GoogleTranslator 自动翻译非中文内容
-• MarkdownReportWriter           — 严格分层 Markdown：企业全称 H1 → 主题 H2 → 新闻 H3
+• ESGIntelligenceAgent.process_intelligence_with_llm() — DeepSeek 大模型语义降噪与结构化摘要
+• MarkdownReportWriter           — 基于 LLM 输出 JSON 的智能报告
 ═══════════════════════════════════════════════════════════════════════════════
-v6 新增
+v7 升级
 ───────
-1. 高级搜索语法（源头过滤）
-   查询格式：`"{公司短名}" {主题词} {当前语言负面词}`
-   例：`"Huayou Cobalt" (strike OR protest) -stock -shares`
-   负面词从 config.yaml 新增字段 negative_filters.{lang} 读取；
-   若该字段缺失，则静默跳过（向后兼容旧版 config.yaml）。
-
-2. 实体出现校验（本地后置过滤，Phase 2.5）
-   深度抓取正文后，检查公司短名（zh 或 en）是否出现于
-   原始标题 或 raw_summary（忽略大小写）。
-   不通过者直接丢弃，并打印：[过滤] 未包含实体: {标题}
-
-YAML 结构注意事项
-─────────────────
-topics 列表中 rmi 条目存在两个 `id:` 字段（YAML 规范不允许重复键，
-safe_load 会以后一个值覆盖前一个）。本脚本在解析时对此做防御性处理：
-  - 企业 id 从 `id` 字段读取（唯一）
-  - 主题语言文本按 zh/en/id/fr 字段读取，不依赖 `id` 字段做语言路由
+1. 移除基于规则的机器翻译（deep-translator），全面切入 DeepSeek 大模型
+2. 大模型实体消歧：自动排除重名噪音（如 GEM 假肢品牌、法国协会等）
+3. 结构化 JSON 输出：公司 / 风险类别 / 中文标题 / 高管洞察 / 来源 / 日期 / URL
+4. 报告分类维度从原始布尔搜索词升级为业务视角风险标签
 """
 
 import html
@@ -50,7 +37,7 @@ import pandas as pd
 import requests
 import yaml
 from bs4 import BeautifulSoup
-from deep_translator import GoogleTranslator
+from openai import OpenAI
 
 # ─────────────────────────────────────────────────────────
 # 日志
@@ -617,71 +604,24 @@ class NewsFetcher:
 
 
 # ─────────────────────────────────────────────────────────
-# 翻译引擎
-# ─────────────────────────────────────────────────────────
-
-class TranslationEngine:
-    """
-    使用 deep_translator.GoogleTranslator 将非中文内容翻译为简体中文。
-    自动重试 3 次，指数退避。
-    """
-
-    MAX_RETRIES = 3
-    BASE_DELAY = 2.0
-
-    @classmethod
-    def to_chinese(cls, text: str, source_lang: str = "auto") -> str:
-        """将任意语言文本翻译为 zh-CN，失败时返回原文。"""
-        if not text or not text.strip():
-            return text
-        # source_lang 来自 LANG_CONFIG[lang]["hl"]，GoogleTranslator 接受 "zh-CN"、"en" 等
-        for attempt in range(cls.MAX_RETRIES):
-            try:
-                result = GoogleTranslator(source=source_lang, target="zh-CN").translate(text)
-                if result:
-                    return str(result)
-            except Exception as exc:
-                logger.warning(f"Translation attempt {attempt + 1} failed: {exc}")
-                if attempt < cls.MAX_RETRIES - 1:
-                    time.sleep(cls.BASE_DELAY * (attempt + 1))
-        return text
-
-    @classmethod
-    def translate_article(cls, article: NewsArticle) -> None:
-        """
-        原地翻译文章的标题与摘要。
-        中文文章直接复制字段，不调用翻译 API。
-        """
-        if article.lang == "zh":
-            article.translated_title   = article.title
-            article.translated_summary = article.raw_summary
-            return
-
-        src = LANG_CONFIG.get(article.lang, {}).get("hl", "auto")
-        article.translated_title   = cls.to_chinese(article.title,       source_lang=src)
-        article.translated_summary = cls.to_chinese(article.raw_summary, source_lang=src)
-
-
-# ─────────────────────────────────────────────────────────
-# Markdown 报告生成器 v5
+# Markdown 报告生成器 v7（基于 LLM 结构化 JSON 输出）
 # ─────────────────────────────────────────────────────────
 
 class MarkdownReportWriter:
     """
-    层级结构：
+    层级结构（v7）：
       # 企业全称（H1）
-        ## 主题（H2）
-          ### [原始标题](url)（H3，每条新闻）
-          - 标题翻译（仅非中文）
-          - 中文摘要
-          - 情报属性
+        ## 风险类别（H2，LLM 输出的 risk_category）
+          > 洞察摘要（insight）
+          📅 日期 | 📰 来源
+          🔗 [原文标题](url)
           ---
     """
 
-    def __init__(self, articles: list[NewsArticle], config: Optional[AgentConfig] = None):
-        self.articles = articles
-        self.config   = config
-        self.df       = pd.DataFrame([a.__dict__ for a in articles]) if articles else pd.DataFrame()
+    def __init__(self, intelligence_data: list[dict], config: Optional[AgentConfig] = None):
+        self.data   = intelligence_data or []
+        self.config = config
+        self.df     = pd.DataFrame(self.data) if self.data else pd.DataFrame()
 
     def _display_name(self, company_id: str) -> str:
         if self.config:
@@ -689,44 +629,40 @@ class MarkdownReportWriter:
         return company_id
 
     def generate(self, path: str = "esg_global_report.md") -> None:
-        if self.df.empty:
+        if self.df.empty or "company" not in self.df.columns:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             Path(path).write_text(
-                "# 🌍 ESG Global Intelligence Report\n\n> No data collected in the current time window.\n",
+                f"# 🌍 ESG 全球情报监控报告\n\n"
+                f"> 📅 **生成时间**: {now}\n\n"
+                f"> 今日未监测到相关有效情报。\n\n"
+                f"> 🤖 *本报告由 ESG Intelligence Agent 驱动，经 DeepSeek 大模型进行实体消歧与智能摘要。*\n",
                 encoding="utf-8",
             )
             logger.info(f"Empty report written to {path}")
             return
 
-        # 统一 parsed_date 为带时区 datetime（便于排序）
-        self.df["_sort_dt"] = self.df["parsed_date"].where(
-            self.df["parsed_date"].notna(),
-            pd.to_datetime(self.df["date"], errors="coerce", utc=True),
-        )
-
         lines = self._build_report()
         Path(path).write_text("\n".join(lines), encoding="utf-8")
-        logger.info(f"Report saved: {path} ({len(self.df)} articles)")
+        logger.info(f"Report saved: {path} ({len(self.df)} intelligence items)")
 
-    # ── 报告骨架 ─────────────────────────────────────────
+    # ── 报告骨架（v8：按风险主题透视，非按企业分组） ─────
 
     def _build_report(self) -> list[str]:
-        now    = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        total  = len(self.df)
-        firms  = self.df["company_id"].nunique()
-        topics = self.df["topic_zh"].nunique()
-        langs  = self.df["lang"].nunique()
-        srcs   = self.df["source"].nunique()
+        now   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        total = len(self.df)
+        firms = self.df["company"].nunique() if "company" in self.df.columns else 0
+        cats  = self.df["risk_category"].nunique() if "risk_category" in self.df.columns else 0
 
-        valid_dates = [d for d in self.df["parsed_date"] if pd.notna(d)]
-        dmin = min(valid_dates).strftime("%Y-%m-%d") if valid_dates else "?"
-        dmax = max(valid_dates).strftime("%Y-%m-%d") if valid_dates else "?"
+        dates = pd.to_datetime(self.df.get("date", pd.Series(dtype=str)), errors="coerce")
+        dmin = dates.min().strftime("%Y-%m-%d") if dates.notna().any() else "?"
+        dmax = dates.max().strftime("%Y-%m-%d") if dates.notna().any() else "?"
 
         lines: list[str] = [
             "# 🌍 ESG 全球情报监控报告",
             "",
             f"> 📅 **生成时间**: {now}",
-            f"> 📊 **情报总数**: {total} 条 | 企业: {firms} 家 | 主题: {topics} 类 | 语种: {langs} 种 | 来源: {srcs} 家",
-            f"> 📆 **覆盖时段**: {dmin} ~ {dmax}（{self.config.days_limit if self.config else 14} 天窗口）",
+            f"> 📊 **情报总数**: {total} 条 | 企业: {firms} 家 | 风险类别: {cats} 类",
+            f"> 📆 **覆盖时段**: {dmin} ~ {dmax}",
             "",
             "---",
             "",
@@ -734,89 +670,82 @@ class MarkdownReportWriter:
             "",
         ]
 
-        # 目录：企业 > 主题
-        for cid in sorted(self.df["company_id"].unique()):
-            display = self._display_name(cid)
-            lines.append(f"- **{display}**")
-            sub = self.df[self.df["company_id"] == cid]
-            for topic in sorted(sub["topic_zh"].unique()):
-                count = len(sub[sub["topic_zh"] == topic])
-                anchor = self._anchor(cid, topic)
-                lines.append(f"  - [{topic}（{count} 条）](#{anchor})")
-
-        lines += ["", "---", ""]
-
-        # 正文：企业 > 主题 > 新闻
-        for cid in sorted(self.df["company_id"].unique()):
-            display = self._display_name(cid)
-            lines.append(f"# {display}")
+        # 目录：风险类别（一级），每个类别下列出涉及的企业及数量
+        for cat in sorted(self.df["risk_category"].unique()):
+            sub_cat = self.df[self.df["risk_category"] == cat]
+            count = len(sub_cat)
+            anchor = self._anchor(cat)
+            lines.append(f"- **{cat}**（{count} 条）")
+            # 列出该类别下的企业分布
+            for company in sorted(sub_cat["company"].unique()):
+                co_count = len(sub_cat[sub_cat["company"] == company])
+                lines.append(f"  - {company}: {co_count} 条")
             lines.append("")
 
-            sub_company = self.df[self.df["company_id"] == cid]
-            for topic in sorted(sub_company["topic_zh"].unique()):
-                anchor = self._anchor(cid, topic)
-                sub_topic = sub_company[sub_company["topic_zh"] == topic].sort_values(
-                    "_sort_dt", ascending=False, na_position="last"
-                )
-                lines.append(f"## {topic} {{#{anchor}}}")
-                lines.append(f"> 共 {len(sub_topic)} 篇相关情报")
-                lines.append("")
+        lines += ["---", ""]
 
-                for _, row in sub_topic.iterrows():
-                    lines.extend(self._render_article(row))
+        # 正文：风险类别（H1） > 情报条目
+        for cat in sorted(self.df["risk_category"].unique()):
+            anchor = self._anchor(cat)
+            sub_cat = self.df[self.df["risk_category"] == cat].copy()
+            # 按日期降序
+            sub_cat["_sort_dt"] = pd.to_datetime(sub_cat.get("date", pd.Series(dtype=str)), errors="coerce")
+            sub_cat = sub_cat.sort_values("_sort_dt", ascending=False, na_position="last")
 
-            lines += ["", "---", ""]
+            lines.append(f"# {cat} {{#{anchor}}}")
+            lines.append(f"> 共 {len(sub_cat)} 篇情报")
+            lines.append("")
+
+            for _, row in sub_cat.iterrows():
+                lines.extend(self._render_item(row))
+
+            lines += ["---", ""]
 
         lines += [
-            "> 🤖 *本报告由 ESG Intelligence Agent v5 自动生成。*",
-            "> 🌐 *多语种内容经 GoogleTranslator 翻译为中文摘要。*",
+            "> 🤖 *本报告由 ESG Intelligence Agent 驱动，经 DeepSeek 大模型进行实体消歧与智能摘要。*",
             "> ⚠️  *数据来源为公开 RSS 新闻源，仅供决策参考，不构成投资或法律建议。*",
         ]
         return lines
 
-    # ── 单条新闻渲染 ─────────────────────────────────────
+    # ── 单条情报渲染（v8：企业名加粗引导） ───────────────
 
     @staticmethod
-    def _render_article(row: pd.Series) -> list[str]:
-        """
-        严格按以下模板渲染：
+    def _render_item(row: pd.Series) -> list[str]:
+        company  = str(row.get("company", "")).strip()
+        title_cn = str(row.get("title_cn", "")).strip()
+        url      = str(row.get("url", "")).strip()
+        insight  = str(row.get("insight", "")).strip()
+        source   = str(row.get("source", "Unknown"))[:50].strip()
+        date_s   = str(row.get("date", ""))[:10]
 
-            ### [{原始标题}]({url})
-            - **标题翻译**: {中文标题}  ← 仅非中文文章显示
-            - **中文摘要**: {摘要}
-            - **情报属性**: 🌐 源语言: {lang} | 📰 来源: {source} | 🕒 日期: {date}
+        parts: list[str] = []
 
-            ---
-        """
-        title  = str(row.get("title", "")).strip()
-        url    = str(row.get("url",   "")).strip()
-        lang   = str(row.get("lang",  "")).strip()
-        source = str(row.get("source", "Unknown"))[:50].strip()
-        date_s = fmt_date(row.get("parsed_date") or row.get("date", ""))
-        lang_label = LANG_CONFIG.get(lang, {}).get("label", lang)
+        # 企业名加粗 + 洞察摘要
+        if insight:
+            if company:
+                parts.append(f"> **{company}** — {insight}")
+            else:
+                parts.append(f"> {insight}")
+        elif company:
+            parts.append(f"> **{company}**")
+        parts.append("")
 
-        parts: list[str] = [f"### [{title}]({url})", ""]
+        # 元信息
+        meta_parts = []
+        if date_s:
+            meta_parts.append(f"📅 {date_s}")
+        if source:
+            meta_parts.append(f"📰 {source}")
+        parts.append("  ".join(meta_parts))
+        parts.append("")
 
-        # 标题翻译（仅非中文）
-        if lang != "zh":
-            trans_title = str(row.get("translated_title", "")).strip()
-            if trans_title and trans_title != title:
-                parts.append(f"- **标题翻译**: {trans_title}")
-
-        # 中文摘要
-        summary = (
-            str(row.get("translated_summary", "")).strip()
-            or str(row.get("raw_summary", "")).strip()
-            or "_（原文内容抓取受限，请点击标题查看原文）_"
-        )
-        parts.append(f"- **中文摘要**: {summary[:200]}")
-
-        # 情报属性
-        parts.append(
-            f"- **情报属性**: 🌐 源语言: {lang_label} | "
-            f"📰 来源: {source} | "
-            f"🕒 日期: {date_s}"
-        )
+        # 标题 + 链接
+        if url and title_cn:
+            parts.append(f"🔗 [{title_cn}]({url})")
+        elif title_cn:
+            parts.append(f"🔗 {title_cn}")
+        elif url:
+            parts.append(f"🔗 [原文链接]({url})")
 
         parts += ["", "---", ""]
         return parts
@@ -824,9 +753,9 @@ class MarkdownReportWriter:
     # ── 辅助 ────────────────────────────────────────────
 
     @staticmethod
-    def _anchor(company_id: str, topic: str) -> str:
+    def _anchor(category: str) -> str:
         """生成 Markdown 锚点（GitHub 兼容：小写+连字符）。"""
-        raw = f"{company_id}-{topic}"
+        raw = category
         return re.sub(r"[^\w\u4e00-\u9fff-]", "-", raw).lower()
 
 
@@ -836,26 +765,190 @@ class MarkdownReportWriter:
 
 class ESGIntelligenceAgent:
     """
-    六阶段流水线（v6）：
+    六阶段流水线（v7）：
       Phase 1   — RSS 多语言抓取（高级搜索语法：精确引号 + 负面词）
       Phase 2   — URL 级去重（title 子集去重）
       Phase 3   — 深度正文抓取（ContentExtractor）
       Phase 2.5 — 实体出现校验（EntityFilter，抓取后置过滤）
-      Phase 4   — 机器翻译（非中文 → 中文）
-      Phase 5   — Markdown 报告生成
+      Phase 4   — DeepSeek 大模型语义降噪与结构化摘要（process_intelligence_with_llm）
+      Phase 5   — Markdown 报告生成（基于 LLM 输出的 JSON）
     """
 
-    def __init__(self, config_path: str = "config.yaml"):
-        self.config       = AgentConfig.from_yaml(config_path)
-        self.articles:  list[NewsArticle] = []
-        self._seen_urls: set[str]         = set()
-        self._cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.days_limit)
-        logger.info(
-            f"Loaded config: {len(self.config.companies)} companies × "
-            f"{len(self.config.topics)} topics × "
-            f"{len(self.config.languages)} languages | "
-            f"cutoff: {self._cutoff.strftime('%Y-%m-%d')}"
-        )
+    # ── DeepSeek API 配置 ────────────────────────────────
+
+    DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+    DEEPSEEK_MODEL    = "deepseek-chat"
+
+    @classmethod
+    def _build_system_prompt(cls, company_names: list[str]) -> str:
+        """构建 DeepSeek System Prompt，极其严厉的实体消歧规则与强制 JSON 输出格式。"""
+        companies_str = "\n".join(f"  - {name}" for name in company_names)
+        return f"""你是一个顶级的 ESG 供应链风险分析师。你的核心任务是【实体消歧】与【风险提炼】。
+
+## 目标企业列表（唯一有效实体）
+{companies_str}
+
+## 警告：搜索结果中包含大量重名噪音
+例如：搜索中国新能源企业"格林美 GEM"，会出现假肢品牌 GEM、法国互助组织 GEM、珠宝宝石 (gem)、隐藏的宝石 (hidden gem) 等完全无关的内容。
+你必须根据新闻标题、正文摘要、语种和来源媒体，结合新能源/电池材料/钴锂镍矿产行业背景进行严格甄别。
+
+## 你的处理逻辑（必须严格遵循）
+
+### 步骤 1：实体消歧
+仔细甄别每一条新闻的主体：
+- 如果新闻与上述目标企业（特别是新能源、电池材料行业）**毫无关系**，**请直接将该条目丢弃，不要将其包含在输出 JSON 中**。
+- 例如：假肢品牌 GEM Prosthetics、法国互助组织/协会 GEM、宝石/珠宝类新闻、与矿产/电池/新能源完全无关的 GEM 缩写等 → 统统丢弃。
+- 例如：搜索 CATL（宁德时代）时出现的完全不相关的缩写 CATL → 丢弃。
+
+### 步骤 2：风险提炼
+对于判定为真实目标企业的情报：
+- 赋予一个**通俗专业的业务分类**（如：劳工权益、环境污染、供应链合规、社区冲突、安全事故、可持续发展、监管政策）。
+- **严禁使用任何布尔逻辑词作为分类**！禁止在分类中出现 "OR"、"AND"、"罢工 OR 抗议" 等搜索关键词。
+- 如果新闻内容虽提及目标企业但无实质性 ESG 风险信息（如纯股价涨跌、财报数据、产品广告），也请剔除。
+
+### 步骤 3：高管洞察撰写
+提炼 ≤50 字的中文高管洞察摘要，必须明确包含：时间、地点、涉事主体、风险定级。
+- **叙事风格要求**：采用多样化、简练的商业简报叙事风格。像专业的顶级商业调查分析师一样，一语道破核心事件与风险定级，语言自然、犀利且富有穿透力。
+- **坚决避免机械的句式模板**：绝不要每条都以"xxxx年x月，[企业名]..."这类刻板句式开头。请灵活变换表达方式，让每条摘要都具有独立的阅读价值。
+
+### 步骤 4：标题翻译
+将非中文原始标题准确翻译为简体中文，填入 title_cn 字段。
+
+## 强制输出格式
+请严格返回纯 JSON 数组（不要包含任何 markdown 代码块符号如 ```json），JSON 结构：
+[
+  {{
+    "company": "企业全称（必须精确匹配目标企业列表中某一项）",
+    "risk_category": "通俗业务分类（如：劳工权益、环境污染、供应链合规）",
+    "title_cn": "准确完整的中文标题",
+    "insight": "50字以内的高管洞察摘要（完整句子，时间+地点+主体+风险定级）",
+    "source": "来源媒体名称",
+    "date": "YYYY-MM-DD 格式日期",
+    "url": "原文链接"
+  }}
+]
+
+如果没有符合条件的有效情报，请返回空数组 []。"""
+
+    @staticmethod
+    def _extract_json_from_response(text: str) -> str:
+        """从 LLM 响应中提取纯 JSON：移除可能的 markdown 代码块标记。"""
+        text = text.strip()
+        # 移除 ```json ... ``` 包装
+        if text.startswith("```"):
+            # 找到第一个换行后的内容
+            first_nl = text.find("\n")
+            if first_nl != -1:
+                text = text[first_nl + 1:]
+            # 移除末尾 ```
+            if text.rstrip().endswith("```"):
+                text = text.rstrip()[:-3]
+        return text.strip()
+
+    def process_intelligence_with_llm(self, raw_data_list: list[dict]) -> list[dict]:
+        """
+        将抓取+实体过滤后的原始文章列表发送至 DeepSeek 大模型，
+        进行语义降噪、实体消歧、翻译与结构化摘要提取。
+
+        Args:
+            raw_data_list: 经过实体过滤后的原始文章数据列表，每个元素包含：
+                company_id, title, date, source, url, raw_summary, lang, topic_zh
+
+        Returns:
+            LLM 清洗后的结构化情报 JSON 列表
+        """
+        if not raw_data_list:
+            logger.info("No raw data to process with LLM.")
+            return []
+
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            logger.error("环境变量 DEEPSEEK_API_KEY 未设置，无法调用 DeepSeek 大模型。回退到原始数据处理。")
+            return self._fallback_processing(raw_data_list)
+
+        # 构建目标企业列表
+        company_names = [
+            self.config.get_full_display_name(c["id"]) for c in self.config.companies
+        ]
+
+        # 构建用户消息：将每篇文章格式化为结构化文本
+        articles_text_parts = []
+        for i, item in enumerate(raw_data_list):
+            company_display = self.config.get_full_display_name(item.get("company_id", ""))
+            lang_label = LANG_CONFIG.get(item.get("lang", ""), {}).get("label", item.get("lang", ""))
+            articles_text_parts.append(
+                f"--- 文章 #{i+1} ---\n"
+                f"原始标题: {item.get('title', '')}\n"
+                f"语种: {lang_label}\n"
+                f"日期: {fmt_date(item.get('parsed_date') or item.get('date', ''))}\n"
+                f"来源: {item.get('source', 'Unknown')}\n"
+                f"搜索目标企业: {company_display}\n"
+                f"正文摘要: {item.get('raw_summary', '')[:300]}\n"
+                f"URL: {item.get('url', '')}"
+            )
+
+        user_message = "\n\n".join(articles_text_parts)
+
+        logger.info(f"Sending {len(raw_data_list)} articles to DeepSeek LLM for semantic processing...")
+
+        try:
+            client = OpenAI(
+                api_key=api_key,
+                base_url=self.DEEPSEEK_BASE_URL,
+            )
+
+            response = client.chat.completions.create(
+                model=self.DEEPSEEK_MODEL,
+                messages=[
+                    {"role": "system", "content": self._build_system_prompt(company_names)},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.1,  # 低温度保证输出稳定
+                max_tokens=4096,
+            )
+
+            raw_output = response.choices[0].message.content or ""
+            logger.info(f"LLM response received ({len(raw_output)} chars).")
+
+            # 提取 JSON
+            json_text = self._extract_json_from_response(raw_output)
+            result = json.loads(json_text)
+
+            if not isinstance(result, list):
+                logger.warning("LLM returned non-list JSON, wrapping in list.")
+                result = [result] if isinstance(result, dict) else []
+
+            logger.info(f"LLM returned {len(result)} structured intelligence items.")
+            return result
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM JSON response: {e}")
+            logger.debug(f"Raw LLM output (first 500 chars): {raw_output[:500] if 'raw_output' in dir() else 'N/A'}")
+            return self._fallback_processing(raw_data_list)
+        except Exception as e:
+            logger.error(f"LLM processing failed: {e}")
+            return self._fallback_processing(raw_data_list)
+
+    def _fallback_processing(self, raw_data_list: list[dict]) -> list[dict]:
+        """
+        当 DeepSeek API 不可用时的回退处理：将原始数据转换为基本 JSON 结构。
+        【关键】绝不使用原始的 topic_zh 作为 risk_category，因为其中包含
+        布尔搜索词（如 "罢工 OR 抗议 OR 原住民 OR 劳工 OR 污染 OR 事故"）。
+        """
+        logger.warning("Using fallback processing (no LLM enhancement).")
+        results = []
+        for item in raw_data_list:
+            # 从 company_id 映射到全称，topic_zh 被丢弃——决不能泄露到报告
+            results.append({
+                "company": self.config.get_full_display_name(item.get("company_id", "")),
+                "risk_category": "潜在风险情报",
+                "title_cn": item.get("title", ""),
+                "insight": (item.get("raw_summary", "") or item.get("description", ""))[:50],
+                "source": item.get("source", "Unknown"),
+                "date": fmt_date(item.get("parsed_date") or item.get("date", "")),
+                "url": item.get("url", ""),
+            })
+        return results
 
     # ── 钉钉推送 ──────────────────────────────────────────
 
@@ -964,8 +1057,6 @@ class ESGIntelligenceAgent:
         )
 
         # ── Phase 2.5: Entity Presence Filter ───────────
-        # 在正文抓取完成后、翻译开始前执行实体出现校验：
-        # 标题或 raw_summary 中必须含有公司中/英文短名，否则丢弃。
         pre_filter_count = len(self.articles)
         filtered_articles: list[NewsArticle] = []
         for article in self.articles:
@@ -984,30 +1075,48 @@ class ESGIntelligenceAgent:
             MarkdownReportWriter([], self.config).generate()
             return
 
-        # ── Phase 4: Translation ─────────────────────────
-        non_zh = [a for a in self.articles if a.lang != "zh"]
-        if non_zh:
-            logger.info(f"Phase 4: Translating {len(non_zh)} non-Chinese articles...")
-            for idx, article in enumerate(non_zh):
-                TranslationEngine.translate_article(article)
-                if (idx + 1) % 5 == 0:
-                    logger.info(f"  Translated: {idx + 1}/{len(non_zh)}")
-                    time.sleep(0.5)
-            logger.info("Phase 4 done.")
+        # ── Phase 4: DeepSeek LLM Semantic Processing ────
+        raw_data_list = []
+        for article in self.articles:
+            raw_data_list.append({
+                "company_id": article.company_id,
+                "title": article.title,
+                "date": article.date,
+                "source": article.source,
+                "url": article.url,
+                "raw_summary": article.raw_summary,
+                "lang": article.lang,
+                "topic_zh": article.topic_zh,
+                "parsed_date": article.parsed_date,
+            })
+
+        intelligence_json = self.process_intelligence_with_llm(raw_data_list)
+        logger.info(f"Phase 4 done. LLM returned {len(intelligence_json)} intelligence items.")
 
         # ── Phase 5: Report ──────────────────────────────
         report_path = "esg_global_report.md"
-        MarkdownReportWriter(self.articles, self.config).generate(report_path)
+        MarkdownReportWriter(intelligence_json, self.config).generate(report_path)
 
         elapsed = time.monotonic() - t0
-        valid_dates = [a.parsed_date for a in self.articles if a.parsed_date]
-        dmin = min(valid_dates).strftime("%Y-%m-%d") if valid_dates else "?"
-        dmax = max(valid_dates).strftime("%Y-%m-%d") if valid_dates else "?"
+        date_values = [item.get("date", "") for item in intelligence_json]
+        dmin = min(date_values) if date_values else "?"
+        dmax = max(date_values) if date_values else "?"
         logger.info(
             f"All done in {elapsed:.1f}s | "
-            f"{len(self.articles)} articles | "
-            f"{extracted_count} with body text | "
+            f"{len(intelligence_json)} intelligence items | "
             f"Coverage: {dmin} ~ {dmax}"
+        )
+
+    def __init__(self, config_path: str = "config.yaml"):
+        self.config       = AgentConfig.from_yaml(config_path)
+        self.articles:  list[NewsArticle] = []
+        self._seen_urls: set[str]         = set()
+        self._cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.days_limit)
+        logger.info(
+            f"Loaded config: {len(self.config.companies)} companies × "
+            f"{len(self.config.topics)} topics × "
+            f"{len(self.config.languages)} languages | "
+            f"cutoff: {self._cutoff.strftime('%Y-%m-%d')}"
         )
 
 

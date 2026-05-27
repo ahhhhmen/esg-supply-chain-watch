@@ -24,16 +24,17 @@ jobs:
         python-version: '3.10'
         cache: 'pip'
 
-    # 3. 安装依赖（无大模型 API 依赖版）
+    # 3. 安装依赖（DeepSeek 大模型语义降噪版）
     - name: Install Engineering Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyyaml requests beautifulsoup4 deep-translator pandas
+        pip install pyyaml requests beautifulsoup4 openai pandas
 
     # 4. 执行全球情报检索与提纯脚本
     - name: Execute ESG Intelligence Agent
       env:
         DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       run: |
         python esg_intelligence_agent.py
 

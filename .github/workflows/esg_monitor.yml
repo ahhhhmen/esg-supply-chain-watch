@@ -3,8 +3,8 @@ name: Global ESG & Supply Chain Monitor
 # 配置触发时机
 on:
   schedule:
-    # 每天 UTC 时间 00:00 自动运行（对应北京时间早上 08:00）
-    - cron: '0 0 * * *'
+    # 每天 UTC 时间 23:45 自动运行（对应北京时间早上 07:45，避开高峰期）
+    - cron: '45 23 * * *'
   workflow_dispatch:
     # 允许在 GitHub 网页端手动点击运行按钮
 

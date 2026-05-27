@@ -1034,6 +1034,40 @@ class ESGIntelligenceAgent:
             MarkdownReportWriter([], self.config, mode=mode).generate()
             return
 
+        # ── Phase 2.6: Per-Company Throttle (漏斗限流) ──
+        # 每家企业最多保留最新 20 条，12 家企业上限 240 条，防止数据管道雪崩
+        pre_throttle = len(self.articles)
+        MAX_PER_COMPANY = 20
+        df_articles = pd.DataFrame([a.__dict__ for a in self.articles])
+        # 构建企业分组键：优先 display name，无则用中文名+英文名
+        df_articles["_company_key"] = df_articles.apply(
+            lambda row: (
+                f"{row.get('company_name_zh', '')} | {row.get('company_name_en', '')}"
+                if row.get("company_name_zh") or row.get("company_name_en")
+                else "宏观政策"
+            ),
+            axis=1,
+        )
+        # 按公司分组，每组按日期降序取最新 MAX_PER_COMPANY 条
+        df_articles["_sort_dt"] = pd.to_datetime(
+            df_articles.get("parsed_date", pd.Series(dtype=str)), errors="coerce"
+        )
+        df_throttled = (
+            df_articles
+            .sort_values(["_company_key", "_sort_dt"], ascending=[True, False], na_position="last")
+            .groupby("_company_key", sort=False)
+            .head(MAX_PER_COMPANY)
+        )
+        self.articles = [NewsArticle(**row.to_dict()) for _, row in df_throttled.iterrows()]
+        # 清理临时列
+        for col in ["_company_key", "_sort_dt"]:
+            if col in df_throttled.columns:
+                df_throttled.drop(columns=[col], inplace=True)
+        logger.info(
+            f"Phase 2.6 per-company throttle (max {MAX_PER_COMPANY}/firm): "
+            f"{pre_throttle} → {len(self.articles)}"
+        )
+
         # ── Phase 4: DeepSeek LLM Semantic Processing ────
         raw_data_list = []
         for article in self.articles:

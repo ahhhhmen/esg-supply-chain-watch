@@ -1,15 +1,15 @@
-name: Global ESG Daily Monitor (Daily)
+name: ESG Policy Weekly Monitor (Weekly)
 
 # 配置触发时机
 on:
   schedule:
-    # 每天 UTC 时间 23:45 自动运行（对应北京时间早上 07:45，避开高峰期）
-    - cron: '45 23 * * *'
+    # 每周五 UTC 时间 23:00 自动运行（对应北京时间周六早上 07:00）
+    - cron: '0 23 * * 5'
   workflow_dispatch:
     # 允许在 GitHub 网页端手动点击运行按钮
 
 jobs:
-  run-monitor:
+  run-weekly-monitor:
     runs-on: ubuntu-latest
 
     steps:
@@ -30,16 +30,16 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyyaml requests beautifulsoup4 openai pandas
 
-    # 4. 执行每日舆情情报检索（--mode daily）
-    - name: Execute ESG Intelligence Agent (Daily)
+    # 4. 执行宏观政策情报检索（--mode weekly，火力全开）
+    - name: Execute ESG Intelligence Agent (Weekly)
       env:
         DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
         DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       run: |
-        python esg_intelligence_agent.py --mode daily
+        python esg_intelligence_agent.py --mode weekly
 
-    # 5. 自动化成果回传（将新生成的 Markdown 报告推回仓库）
-    - name: Commit and Push Daily Intelligence Report
+    # 5. 自动化成果回传（将新生成的 Markdown 周报推回仓库）
+    - name: Commit and Push Weekly Policy Report
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -47,7 +47,7 @@ jobs:
         # 检查报告文件是否有更新
         if [ -f "esg_global_report.md" ]; then
           git add esg_global_report.md
-          git diff-index --quiet HEAD || git commit -m "🤖 每日自动更新: 舆情简报 ($(date +'%Y-%m-%d %H:%M'))"
+          git diff-index --quiet HEAD || git commit -m "🤖 每周自动更新: 地缘政策周报 ($(date +'%Y-%m-%d %H:%M'))"
           git push
         else
           echo "警告：未检测到生成的报告文件。"

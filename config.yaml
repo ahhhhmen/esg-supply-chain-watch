@@ -1,93 +1,111 @@
 # ==========================================
-# 全球 ESG 与供应链合规监控智能体 配置文件
+# 全球 ESG 与供应链合规监控智能体 配置文件 v9
+# 架构：地缘多语种通用轨 + 高风险机构定向轨 + 双频动态播报
 # ==========================================
 
-# 1. 监控企业矩阵（使用短名进行精准搜索，全称用于报告展示）
+# 1. 核心监控企业名单
 companies:
-  - id: huayou
-    short_name_zh: 华友钴业
-    short_name_en: Huayou Cobalt
-    full_name_zh: 浙江华友钴业股份有限公司
-    full_name_en: Zhejiang Huayou Cobalt Co., Ltd.
-  - id: cmoc
-    short_name_zh: 洛阳钼业
-    short_name_en: CMOC
-    full_name_zh: 洛阳栾川钼业集团股份有限公司
-    full_name_en: CMOC Group Limited
-  - id: ganfeng
-    short_name_zh: 赣锋锂业
-    short_name_en: Ganfeng Lithium
-    full_name_zh: 赣锋锂业股份有限公司
-    full_name_en: Ganfeng Lithium Co., Ltd.
-  - id: cngr
-    short_name_zh: 中伟股份
-    short_name_en: CNGR
-    full_name_zh: 中伟新材料股份有限公司
-    full_name_en: CNGR Advanced Material Co., Ltd.
-  - id: gem
-    short_name_zh: 格林美
-    short_name_en: GEM
-    full_name_zh: 格林美股份有限公司
-    full_name_en: GEM Co., Ltd.
-  - id: catl
-    short_name_zh: 宁德时代
-    short_name_en: CATL
-    full_name_zh: 宁德时代新能源科技股份有限公司
-    full_name_en: Contemporary Amperex Technology Co., Limited
+  - name_zh: "华友钴业"
+    name_en: "Huayou Cobalt"
+    ticker: "603799.SS"
+  - name_zh: "洛阳钼业"
+    name_en: "CMOC"
+    ticker: "603993.SS"
+  - name_zh: "赣锋锂业"
+    name_en: "Ganfeng Lithium"
+    ticker: "002460.SZ"
+  - name_zh: "中伟股份"
+    name_en: "CNGR"
+    ticker: "300919.SZ"
+  - name_zh: "格林美"
+    name_en: "GEM"
+    ticker: "002340.SZ"
+  - name_zh: "宁德时代"
+    name_en: "CATL"
+    ticker: "300750.SZ"
 
-# 2. 监控主题矩阵（分层监控：自愿标准 + 强制监管 + 事件型突发风险）
+# 2. 三大抓取轨道配置
+intelligence_tracks:
+
+  # ── 轨道 1：地缘多语种通用新闻网 ───────────────────────
+  # 消除 GitHub 云端美国 IP 的地理隔离，以当地 hl/gl/ceid 参数定向抓取
+  geographical_tracks:
+    - lang: "zh-CN"
+      lang_label: "中文"
+      url_template: "https://news.google.com/rss/search?q={query}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+    - lang: "en-US"
+      lang_label: "English"
+      url_template: "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+    - lang: "id-ID"
+      lang_label: "Bahasa Indonesia"
+      url_template: "https://news.google.com/rss/search?q={query}&hl=id&gl=ID&ceid=ID:id"
+    - lang: "fr-FR"
+      lang_label: "Français"
+      url_template: "https://news.google.com/rss/search?q={query}&hl=fr&gl=FR&ceid=FR:fr"
+
+  # ── 轨道 2：定向高风险机构预警 ─────────────────────────
+  # 针对特定企业在商业与人权资源中心 (BHRRC) 的黑历史记录
+  premium_company_tracks:
+    - source: "BHRRC"
+      company_name_field: "name_en"
+      url_template: 'https://news.google.com/rss/search?q="{company_name}"+site:business-humanrights.org&hl=en-US&gl=US&ceid=US:en'
+      track_label: "BHRRC 人权预警"
+
+  # ── 轨道 3：全球宏观合规政策前沿 ─────────────────────
+  # 独立于企业，每周全局抓取一次欧盟准则动态 (EFRAG/CSRD/CSDDD/ESRS)
+  premium_global_tracks:
+    - source: "EFRAG"
+      url: "https://news.google.com/rss/search?q=site:efrag.org+(CSRD+OR+ESRS+OR+CSDDD)&hl=en-US&gl=US&ceid=US:en"
+      track_label: "欧盟合规前沿"
+
+# 3. 双频主题矩阵（多语种关键词）
 topics:
-  # === 第一梯队：自愿性行业倡议标准（查准：审计与认证动态） ===
-  - id: rmi
-    zh: RMI 负责任矿产
-    en: Responsible Minerals Initiative RMI
-    id: RMI Mineral Bertanggung Jawab
-    fr: RMI minéraux responsables
-  - id: rmap
-    zh: RMAP 保证流程
-    en: RMAP Assurance
-    id: RMAP Assurance
-    fr: RMAP Assurance
-  - id: irma
-    zh: IRMA 负责任采矿
-    en: IRMA Mining
-    id: IRMA Pertambangan
-    fr: IRMA exploitation minière
 
-  # === 第二梯队：核心法律合规监管（查准：供应链强制传导风险） ===
-  - id: csddd
-    zh: CSDDD 供应链尽责
-    en: CSDDD Due Diligence
-    id: CSDDD Uji Tuntas
-    fr: CSDDD devoir de vigilance
-  - id: csrd
-    zh: CSRD 可持续报告
-    en: CSRD Sustainability
-    id: CSRD Keberlanjutan
-    fr: CSRD durabilité
+  # ── 日常主题 (Daily)：舆情高频风险 ────────────────────
+  daily:
+    - category: "劳工权益与罢工"
+      keywords:
+        zh-CN: ["罢工", "劳工权益", "劳动争议", "抗议", "工会", "强迫劳动", "劳资纠纷"]
+        en-US: ["strike", "labor rights", "worker protest", "union dispute", "forced labor", "wage dispute", "collective bargaining"]
+        id-ID: ["mogok kerja", "hak buruh", "unjuk rasa", "serikat pekerja", "sengketa tenaga kerja", "kerja paksa"]
+        fr-FR: ["grève", "droits des travailleurs", "syndicat", "manifestation", "travail forcé", "conflit social"]
 
-  # === 第三梯队：泛化可持续议题（查全：日常运营与宏观战略） ===
-  - id: sustainable_sc
-    zh: 可持续供应链
-    en: Sustainable Supply Chain
-    id: Rantai Pasok Berkelanjutan
-    fr: Chaîne d'approvisionnement durable
+    - category: "环境污染与安全事故"
+      keywords:
+        zh-CN: ["污染", "泄漏", "环境事故", "废水", "尾矿", "爆炸", "安全事故", "环保处罚", "有毒物质"]
+        en-US: ["pollution", "spill", "environmental accident", "toxic waste", "tailings", "explosion", "safety incident", "EPA fine", "hazardous material"]
+        id-ID: ["polusi", "tumpahan", "kecelakaan lingkungan", "limbah beracun", "ledakan", "kecelakaan kerja", "bahan berbahaya"]
+        fr-FR: ["pollution", "déversement", "accident environnemental", "déchets toxiques", "explosion", "sécurité au travail", "substance dangereuse"]
 
-  # === 第四梯队：事件驱动型突发风险（领先指标：利用布尔逻辑降低请求压力） ===
-  - id: controversy_events
-    zh: (罢工 OR 抗议 OR 原住民 OR 劳工 OR 污染 OR 事故)
-    en: (strike OR protest OR indigenous OR labor OR pollution OR accident)
-    id: (mogok OR protes OR masyarakat adat OR buruh OR polusi OR kecelakaan)
-    fr: (grève OR manifestation OR autochtones OR travail OR pollution OR accident)
+    - category: "社区冲突与土地纠纷"
+      keywords:
+        zh-CN: ["社区抗议", "征地纠纷", "拆迁", "居民投诉", "土著权利", "安置补偿"]
+        en-US: ["community protest", "land dispute", "resettlement", "indigenous rights", "compensation", "local opposition"]
+        id-ID: ["protes masyarakat", "sengketa tanah", "penggusuran", "hak adat", "kompensasi"]
+        fr-FR: ["protestation communautaire", "conflit foncier", "expulsion", "droits autochtones", "compensation"]
 
-# 3. 系统运行控制参数
-languages: ["zh", "en", "id", "fr"]
+  # ── 周报主题 (Weekly)：三大地缘合规维度 ──────────────
+  weekly:
+    - category: "欧盟准入壁垒"
+      keywords:
+        zh-CN: ["欧盟电池法案", "电池护照", "关键原材料法", "CRMA", "CSRD", "CSDDD", "碳边境调节", "CBAM", "供应链尽职调查", "欧盟新电池法规"]
+        en-US: ["EU Battery Regulation", "Battery Passport", "Critical Raw Materials Act", "CRMA", "CSRD", "CSDDD", "CBAM", "supply chain due diligence", "EU Battery Directive"]
+        id-ID: ["Regulasi Baterai UE", "Paspor Baterai", "CRMA", "CSRD", "CBAM", "uji tuntas rantai pasok", "Uni Eropa baterai"]
+        fr-FR: ["Règlement Batterie UE", "Passeport Batterie", "CRMA", "CSRD", "CSDDD", "CBAM", "devoir de vigilance", "code minier", "directive batteries"]
+
+    - category: "美国地缘封锁"
+      keywords:
+        zh-CN: ["通胀削减法案", "IRA", "FEOC", "外国敏感实体", "涉疆法案", "UFLPA", "实体清单", "出口管制", "BIS"]
+        en-US: ["Inflation Reduction Act", "FEOC", "Foreign Entity of Concern", "UFLPA", "entity list", "export control", "IRA tax credit", "BIS"]
+        id-ID: ["Inflation Reduction Act", "FEOC", "Undang-Undang Pengurangan Inflasi", "daftar entitas", "kontrol ekspor"]
+        fr-FR: ["Inflation Reduction Act", "FEOC", "entité étrangère préoccupante", "liste d'entités", "contrôle des exportations", "restrictions commerciales"]
+
+    - category: "资源国民族主义"
+      keywords:
+        zh-CN: ["下游化", "原矿出口禁令", "本地化加工", "资源民族主义", "矿产主权", "禁止原矿出口"]
+        en-US: ["downstreaming", "raw ore export ban", "Hilirisasi", "local processing mandate", "resource nationalism", "mining sovereignty", "mineral export ban"]
+        id-ID: ["hilirisasi", "larangan ekspor bijih mentah", "nasionalisme sumber daya", "kedaulatan mineral", "pengolahan lokal"]
+        fr-FR: ["transformation locale", "interdiction d'exportation de minerai brut", "nationalisme des ressources", "souveraineté minière", "code minier", "minerai brut"]
+
+# 4. 系统运行控制参数
 days_limit: 14
-
-# 4. 噪音过滤控制（排除纯财经、股市、财报等非 ESG 噪音）
-  # 增加针对 GEM 等通用词的强力负面过滤
-negative_filters:
-  zh: "-股票 -股市 -收盘 -涨停 -跌停 -财报 -分红 -大盘"
-  en: "-stock -shares -market -earnings -dividend -investors -hidden -draft -nfl"
-  id: "-saham -pasar -investor -dividen -bursa -hidden"
-  fr: "-action -bourse -marché -bénéfice -dividende -théâtrale"

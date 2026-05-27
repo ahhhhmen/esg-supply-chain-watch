@@ -630,8 +630,8 @@ class MarkdownReportWriter:
             lines += ["---", ""]
 
         lines += [
-            "> 🤖 *本报告由 ESG Intelligence Agent 驱动，经 DeepSeek 大模型进行实体消歧与智能摘要。*",
-            "> ⚠️  *数据来源为公开 RSS 新闻源，仅供决策参考，不构成投资或法律建议。*",
+            "🤖 *本报告由 ESG Intelligence Agent 驱动，经 DeepSeek 大模型进行实体消歧与智能摘要。*",
+            "⚠️  *数据来源为公开 RSS 新闻源，仅供决策参考，不构成投资或法律建议。*",
         ]
         return lines
 
@@ -646,30 +646,33 @@ class MarkdownReportWriter:
 
         parts: list[str] = []
 
-        # Line 1: Company + Title
+        # Line 1: Company + Title (bold header — 钉钉适配：双换行分割)
         if company and title:
-            parts.append(f"> **\u3010{company}\u3011** — {title}")
+            parts.append(f"**{company}** | {title}\n\n")
         elif company:
-            parts.append(f"> **\u3010{company}\u3011**")
+            parts.append(f"**{company}**\n\n")
         elif title:
-            parts.append(f"> **{title}**")
+            parts.append(f"**{title}**\n\n")
 
-        # Line 2: Insight
+        # Line 2: Executive Insight
         if insight:
-            parts.append(f"> 💡 **高管洞察**: {insight}")
+            parts.append(f"💡 **高管洞察**：{insight}\n\n")
 
-        # Line 3: Date, Source, Link
-        meta_parts = []
+        # Line 3: Meta bar (date | source | link) in italic
+        meta_segments = []
         if date_s:
-            meta_parts.append(f"📅 {date_s}")
+            meta_segments.append(f"📅 {date_s}")
         if source:
-            meta_parts.append(f"📰 {source}")
+            meta_segments.append(f"📰 {source}")
         if url:
-            meta_parts.append(f"🔗 [阅读原文]({url})")
-        if meta_parts:
-            parts.append(f"> {' '.join(meta_parts)}")
+            meta_segments.append(f"🔗 [阅读原文]({url})")
+        if meta_segments:
+            # 钉钉 italics: use *text* wrapping + double-spaces between segments
+            meta_line = "   |   ".join(meta_segments)
+            parts.append(f"*{meta_line}*\n\n")
 
-        parts += ["> ---", ""]
+        # Separator
+        parts.append("---\n\n")
         return parts
 
 

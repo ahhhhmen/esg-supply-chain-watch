@@ -5,24 +5,47 @@
 
 # 1. 核心监控企业名单
 companies:
+  # === 原有核心矿企与材料商 ===
   - name_zh: "华友钴业"
     name_en: "Huayou Cobalt"
     ticker: "603799.SS"
-  - name_zh: "洛阳钼业"
-    name_en: "CMOC"
-    ticker: "603993.SS"
   - name_zh: "赣锋锂业"
     name_en: "Ganfeng Lithium"
     ticker: "002460.SZ"
-  - name_zh: "中伟股份"
-    name_en: "CNGR"
-    ticker: "300919.SZ"
-  - name_zh: "格林美"
-    name_en: "GEM"
-    ticker: "002340.SZ"
   - name_zh: "宁德时代"
     name_en: "CATL"
     ticker: "300750.SZ"
+  - name_zh: "格林美"
+    name_en: "GEM"
+    ticker: "002340.SZ"
+  - name_zh: "洛阳钼业"
+    name_en: "CMOC"
+    ticker: "603993.SS"
+
+  # === 新增：上游镍不锈钢巨头 ===
+  - name_zh: "青山控股"
+    name_en: "Tsingshan Holding"
+    ticker: "PRIVATE"
+
+  # === 新增：下游主要主机厂客户 ===
+  - name_zh: "特斯拉"
+    name_en: "Tesla"
+    ticker: "TSLA"
+  - name_zh: "宝马"
+    name_en: "BMW"
+    ticker: "BMW.DE"
+  - name_zh: "梅赛德斯-奔驰"
+    name_en: "Mercedes-Benz"
+    ticker: "MBG.DE"
+  - name_zh: "大众汽车"
+    name_en: "Volkswagen"
+    ticker: "VOW3.DE"
+  - name_zh: "福特汽车"
+    name_en: "Ford"
+    ticker: "F"
+  - name_zh: "通用汽车"
+    name_en: "General Motors"
+    ticker: "GM"
 
 # 2. 三大抓取轨道配置
 intelligence_tracks:

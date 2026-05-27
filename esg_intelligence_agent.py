@@ -500,9 +500,10 @@ class MarkdownReportWriter:
     }
     FALLBACK_TAG = "【日常运营风险】"
 
-    def __init__(self, intelligence_data: list[dict], config: Optional[AgentConfig] = None):
+    def __init__(self, intelligence_data: list[dict], config: Optional[AgentConfig] = None, mode: str = "daily"):
         self.data = intelligence_data or []
         self.config = config
+        self.mode = mode
         self.df = pd.DataFrame(self.data) if self.data else pd.DataFrame()
 
     # ── 标签聚合辅助 ──────────────────────────────────
@@ -551,13 +552,21 @@ class MarkdownReportWriter:
             return cls.TAG_PRIORITY.get(item[0], 999)
         return dict(sorted(groups.items(), key=sort_key))
 
+    # ── 动态标题 ──────────────────────────────────────
+
+    def _get_report_title(self) -> str:
+        if self.mode == "weekly":
+            return "🏛️ ESG 全球地缘与合规周报 (Weekly Strategy Insight)"
+        return "📊 ESG 全球供应链动态日报 (Daily Risk Radar)"
+
     # ── 生成入口 ──────────────────────────────────────
 
     def generate(self, path: str = "esg_global_report.md") -> None:
         if self.df.empty or "company" not in self.df.columns:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            title = self._get_report_title()
             Path(path).write_text(
-                f"# 🌍 ESG 全球情报监控报告\n\n"
+                f"# {title}\n\n"
                 f"> 📅 **生成时间**: {now}\n\n"
                 f"> 今日未监测到相关有效情报。\n\n"
                 f"> 🤖 *本报告由 ESG Intelligence Agent 驱动，经 DeepSeek 大模型进行实体消歧与智能摘要。*\n",
@@ -582,8 +591,9 @@ class MarkdownReportWriter:
         tag_groups = self._build_tag_groups(self.df)
         tag_count = len(tag_groups)
 
+        title = self._get_report_title()
         lines: list[str] = [
-            "# 🌍 ESG 全球情报监控报告",
+            f"# {title}",
             "",
             f"> 📅 **生成时间**: {now}",
             f"> 📊 **情报总数**: {total} 条 | 企业: {firms} 家 | 风险标签: {tag_count} 类",
@@ -775,35 +785,58 @@ class ESGIntelligenceAgent:
 
 如果没有符合条件的有效情报，请返回空数组 []。"""
 
-    @staticmethod
-    def _extract_json_from_response(text: str) -> str:
-        text = text.strip()
-        if text.startswith("```"):
-            first_nl = text.find("\n")
-            if first_nl != -1:
-                text = text[first_nl + 1:]
-            if text.rstrip().endswith("```"):
-                text = text.rstrip()[:-3]
-        return text.strip()
+    # 分批处理常量：每批最多发送的文章数
+    BATCH_SIZE = 15
 
-    def process_intelligence_with_llm(self, raw_data_list: list[dict], mode: str = "daily") -> list[dict]:
-        """将抓取+实体过滤后的原始文章列表发送至 DeepSeek，进行语义降噪与四重标签审计。"""
-        if not raw_data_list:
-            logger.info("No raw data to process with LLM.")
+    @classmethod
+    def _extract_json_array(cls, text: str) -> Optional[list]:
+        """从 LLM 回复中强行提取合法 JSON 数组并校验。
+
+        1. 使用正则 r'\\[.*\\]' (DOTALL) 提取最外层的 JSON 数组结构。
+        2. json.loads 解析。
+        3. 校验：必须是非空 list，其中至少一条包含 "company" 字段且非空。
+
+        Returns:
+            解析成功返回 list[dict]，失败返回 None。
+        """
+        if not text or not text.strip():
+            return None
+        # 步骤1: 正则提取最外层 JSON 数组
+        match = re.search(r"\[.*\]", text.strip(), re.DOTALL)
+        if not match:
+            logger.warning("_extract_json_array: no JSON array found in LLM response.")
+            return None
+        candidate = match.group(0)
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError as e:
+            logger.warning(f"_extract_json_array: JSON parse failed: {e}")
+            return None
+        # 步骤2: 结构校验
+        if not isinstance(parsed, list):
+            logger.warning("_extract_json_array: parsed result is not a list.")
+            return None
+        if len(parsed) == 0:
+            # 空数组是合法回复（无有效情报）
             return []
+        # 步骤3: 至少包含一条有效企业名
+        has_company = any(
+            isinstance(item, dict) and str(item.get("company", "")).strip()
+            for item in parsed
+        )
+        if not has_company:
+            logger.warning("_extract_json_array: parsed array has no items with non-empty 'company' field — discarding.")
+            return None
+        return parsed
 
-        api_key = os.environ.get("DEEPSEEK_API_KEY")
-        if not api_key:
-            logger.error("环境变量 DEEPSEEK_API_KEY 未设置，回退处理。")
-            return self._fallback_processing(raw_data_list)
-
-        company_names = self.config.get_all_company_display_names()
-
-        articles_text_parts = []
-        for i, item in enumerate(raw_data_list):
+    @classmethod
+    def _build_articles_text(cls, batch: list[dict], start_idx: int) -> str:
+        """将一批文章组装为 LLM user message 文本。"""
+        parts = []
+        for i, item in enumerate(batch):
             display_name = item.get("display_name", item.get("company_name_zh", ""))
-            articles_text_parts.append(
-                f"--- 文章 #{i+1} ---\n"
+            parts.append(
+                f"--- 文章 #{start_idx + i + 1} ---\n"
                 f"原始标题: {item.get('title', '')}\n"
                 f"语种: {item.get('lang', 'en-US')}\n"
                 f"日期: {fmt_date(item.get('parsed_date') or item.get('date', ''))}\n"
@@ -814,72 +847,82 @@ class ESGIntelligenceAgent:
                 f"正文摘要: {item.get('raw_summary', '')[:300]}\n"
                 f"URL: {item.get('url', '')}"
             )
+        return "\n\n".join(parts)
 
-        user_message = "\n\n".join(articles_text_parts)
-        logger.info(f"Sending {len(raw_data_list)} articles to DeepSeek LLM (mode={mode})...")
+    def process_intelligence_with_llm(self, raw_data_list: list[dict], mode: str = "daily") -> list[dict]:
+        """分批将文章发送至 DeepSeek，进行语义降噪与四重标签审计。
 
-        try:
-            client = OpenAI(api_key=api_key, base_url=self.DEEPSEEK_BASE_URL)
-            response = client.chat.completions.create(
-                model=self.DEEPSEEK_MODEL,
-                messages=[
-                    {"role": "system", "content": self._build_system_prompt(company_names, mode)},
-                    {"role": "user", "content": user_message},
-                ],
-                temperature=0.1,
-                max_tokens=8192,
-            )
+        ═══ 核心改动（反降级重构） ═══
+        • BATCH_SIZE=15 分批处理，防止单次数据量过大导致 JSON 崩溃。
+        • 使用 _extract_json_array() 正则强提取 + 企业名校验。
+        • 批次失败直接丢弃该批次数据，绝不回退到原始数据。
+        """
+        if not raw_data_list:
+            logger.info("No raw data to process with LLM.")
+            return []
 
-            raw_output = response.choices[0].message.content or ""
-            logger.info(f"LLM response received ({len(raw_output)} chars).")
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            logger.error("环境变量 DEEPSEEK_API_KEY 未设置，无法调用 LLM，返回空结果。")
+            return []
 
-            json_text = self._extract_json_from_response(raw_output)
-            result = json.loads(json_text)
+        company_names = self.config.get_all_company_display_names()
+        total = len(raw_data_list)
+        batch_count = (total + self.BATCH_SIZE - 1) // self.BATCH_SIZE
+        logger.info(
+            f"LLM processing: {total} articles → {batch_count} batch(es) "
+            f"(BATCH_SIZE={self.BATCH_SIZE}, mode={mode})"
+        )
 
-            if not isinstance(result, list):
-                logger.warning("LLM returned non-list JSON, wrapping in list.")
-                result = [result] if isinstance(result, dict) else []
+        all_results: list[dict] = []
+        client = OpenAI(api_key=api_key, base_url=self.DEEPSEEK_BASE_URL)
 
-            logger.info(f"LLM returned {len(result)} structured intelligence items.")
-            return result
+        for batch_idx in range(batch_count):
+            start = batch_idx * self.BATCH_SIZE
+            end = min(start + self.BATCH_SIZE, total)
+            batch = raw_data_list[start:end]
+            logger.info(f"  Batch {batch_idx + 1}/{batch_count}: articles #{start + 1}–{end} ({len(batch)} items)")
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM JSON response: {e}")
-            return self._fallback_processing(raw_data_list)
-        except Exception as e:
-            logger.error(f"LLM processing failed: {e}")
-            return self._fallback_processing(raw_data_list)
+            user_message = self._build_articles_text(batch, start)
 
-    def _fallback_processing(self, raw_data_list: list[dict]) -> list[dict]:
-        """DeepSeek API 不可用时的回退处理。"""
-        logger.warning("Using fallback processing (no LLM enhancement).")
-        results = []
-        for item in raw_data_list:
-            zh = item.get("company_name_zh", "")
-            en = item.get("company_name_en", "")
-            display = f"{zh} | {en}" if zh and en else (zh or en or "Unknown")
-            # 简单标签推断
-            url = item.get("url", "")
-            tags = []
-            if "business-humanrights.org" in url:
-                tags.append("【机构预警】")
-            elif "efrag.org" in url:
-                tags.append("【政策前沿】")
-            results.append({
-                "company": display,
-                "risk_category": "潜在风险情报",
-                "tags": tags,
-                "title": item.get("title", ""),
-                "insight": (item.get("raw_summary", "") or item.get("description", ""))[:50],
-                "source": item.get("source", "Unknown"),
-                "date": fmt_date(item.get("parsed_date") or item.get("date", "")),
-                "url": url,
-            })
-        return results
+            try:
+                response = client.chat.completions.create(
+                    model=self.DEEPSEEK_MODEL,
+                    messages=[
+                        {"role": "system", "content": self._build_system_prompt(company_names, mode)},
+                        {"role": "user", "content": user_message},
+                    ],
+                    temperature=0.1,
+                    max_tokens=8192,
+                )
+
+                raw_output = response.choices[0].message.content or ""
+                logger.info(f"  LLM response received ({len(raw_output)} chars).")
+
+                parsed = self._extract_json_array(raw_output)
+                if parsed is None:
+                    logger.warning(
+                        f"  ⚠ Batch {batch_idx + 1} failed JSON extraction/validation — "
+                        f"DISCARDING {len(batch)} articles to prevent noise pollution."
+                    )
+                    continue
+
+                all_results.extend(parsed)
+                logger.info(f"  Batch {batch_idx + 1}: {len(parsed)} intelligence items extracted.")
+
+            except Exception as e:
+                logger.warning(
+                    f"  ⚠ Batch {batch_idx + 1} LLM call failed ({type(e).__name__}: {e}) — "
+                    f"DISCARDING {len(batch)} articles to prevent noise pollution."
+                )
+                continue
+
+        logger.info(f"LLM processing complete: {len(all_results)} total intelligence items from {batch_count} batch(es).")
+        return all_results
 
     # ── 钉钉推送 ──────────────────────────────────────────
 
-    def push_to_dingtalk(self, report_path: str = "esg_global_report.md") -> None:
+    def push_to_dingtalk(self, report_path: str = "esg_global_report.md", mode: str = "daily") -> None:
         webhook = os.environ.get("DINGTALK_WEBHOOK")
         if not webhook:
             logger.info("未配置钉钉 Webhook (DINGTALK_WEBHOOK)，跳过推送。")
@@ -890,8 +933,15 @@ class ESGIntelligenceAgent:
             if len(content) > 15000:
                 content = content[:15000] + "\n\n> ⚠️ 报告过长，已自动截断。完整内容请查看源文件。"
 
+            if mode == "weekly":
+                first_line = "🔮【宏观合规战略】全球地缘与准入壁垒周报"
+                ding_title = "🏛️ ESG 全球地缘与合规周报"
+            else:
+                first_line = "🚨【突发舆情雷达】日常合规与风险速递"
+                ding_title = "📊 ESG 全球供应链动态日报 (Daily Risk Radar)"
+            ding_content = f"# {first_line}\n\n{content}"
             headers = {"Content-Type": "application/json"}
-            data = {"msgtype": "markdown", "markdown": {"title": "🌍 ESG 供应链合规简报", "text": content}}
+            data = {"msgtype": "markdown", "markdown": {"title": ding_title, "text": ding_content}}
             logger.info("正在向钉钉发送情报简报...")
             response = requests.post(webhook, headers=headers, data=json.dumps(data))
             logger.info(f"钉钉服务器返回: {response.text}")
@@ -934,7 +984,7 @@ class ESGIntelligenceAgent:
         logger.info(f"Phase 1 done. Skipped {skipped} old. Collected {len(self.articles)} articles.")
 
         if not self.articles:
-            MarkdownReportWriter([], self.config).generate()
+            MarkdownReportWriter([], self.config, mode=mode).generate()
             return
 
         # ── Phase 2: Dedup by title ──────────────────────
@@ -978,7 +1028,7 @@ class ESGIntelligenceAgent:
         logger.info(f"Phase 2.5 entity filter: {pre_filter_count} → {len(self.articles)}")
 
         if not self.articles:
-            MarkdownReportWriter([], self.config).generate()
+            MarkdownReportWriter([], self.config, mode=mode).generate()
             return
 
         # ── Phase 4: DeepSeek LLM Semantic Processing ────
@@ -1008,7 +1058,7 @@ class ESGIntelligenceAgent:
 
         # ── Phase 5: Report ──────────────────────────────
         report_path = "esg_global_report.md"
-        MarkdownReportWriter(intelligence_json, self.config).generate(report_path)
+        MarkdownReportWriter(intelligence_json, self.config, mode=mode).generate(report_path)
 
         elapsed = time.monotonic() - t0
         date_values = [item.get("date", "") for item in intelligence_json]
@@ -1060,4 +1110,4 @@ if __name__ == "__main__":
     args = parse_args()
     agent = ESGIntelligenceAgent(config_path=args.config)
     agent.run(mode=args.mode)
-    agent.push_to_dingtalk()
+    agent.push_to_dingtalk(mode=args.mode)

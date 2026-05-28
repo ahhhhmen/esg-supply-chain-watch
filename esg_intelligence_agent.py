@@ -1058,11 +1058,9 @@ class ESGIntelligenceAgent:
             .groupby("_company_key", sort=False)
             .head(MAX_PER_COMPANY)
         )
+        # 必须在实例化 NewsArticle 之前移除内部临时列，避免 TypeError
+        df_throttled.drop(columns=["_company_key", "_sort_dt"], inplace=True, errors="ignore")
         self.articles = [NewsArticle(**row.to_dict()) for _, row in df_throttled.iterrows()]
-        # 清理临时列
-        for col in ["_company_key", "_sort_dt"]:
-            if col in df_throttled.columns:
-                df_throttled.drop(columns=[col], inplace=True)
         logger.info(
             f"Phase 2.6 per-company throttle (max {MAX_PER_COMPANY}/firm): "
             f"{pre_throttle} → {len(self.articles)}"

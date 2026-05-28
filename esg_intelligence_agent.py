@@ -431,6 +431,43 @@ class ContentExtractor:
 # RSS 抓取器
 # ─────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────
+# URL 解密还原：Google News → 真实源站直链
+# ─────────────────────────────────────────────────────────
+
+def resolve_news_url(url: str, timeout: int = 5) -> str:
+    """将 Google News 重定向链接还原为源站直链。
+
+    策略：
+    1. 非 Google News 链接直接原样返回。
+    2. 使用 HEAD 请求跟随重定向（轻量），获取最终目标 URL。
+    3. HEAD 不可用时（405）降级为 GET + stream 立即关闭。
+    4. 超时/网络异常时回退到原始链接。
+    """
+    if not url or "news.google.com" not in url:
+        return url
+    try:
+        # 优先 HEAD（轻量）
+        resp = requests.head(
+            url, headers=FETCH_HEADERS, allow_redirects=True, timeout=timeout,
+        )
+        # 某些 CDN 拒绝 HEAD → 405，降级为 GET + stream
+        if resp.status_code == 405:
+            resp = requests.get(
+                url, headers=FETCH_HEADERS, allow_redirects=True,
+                timeout=timeout, stream=True,
+            )
+            resp.close()
+        resolved = resp.url
+        # 确认解析后不再是 Google 域名
+        if "news.google.com" not in resolved and len(resolved) > 10:
+            logger.debug(f"URL resolved: {url[:60]}... → {resolved[:80]}...")
+            return resolved
+    except Exception:
+        pass
+    return url
+
+
 class NewsFetcher:
     """v9 统一 RSS 抓取器。"""
 
@@ -449,6 +486,8 @@ class NewsFetcher:
                 parsed = cls._parse_item(item_xml)
                 if parsed:
                     parsed["description"] = strip_html(parsed.get("description", ""))
+                    # 将 Google News 加密链接还原为源站直链
+                    parsed["url"] = resolve_news_url(parsed["url"])
                     articles.append(parsed)
         except Exception as exc:
             logger.debug(f"RSS fetch failed [{url[:60]}]: {exc}")
@@ -635,6 +674,21 @@ class MarkdownReportWriter:
         ]
         return lines
 
+    # URL 安全常量
+    _SAFE_URL_FALLBACK = "https://news.google.com"
+
+    @classmethod
+    def _sanitize_url(cls, url: str) -> str:
+        """校验 URL 安全性：不以 http 开头或长度异常 → 回退到 Google News 主页。"""
+        if not url:
+            return cls._SAFE_URL_FALLBACK
+        url = url.strip()
+        if not url.lower().startswith("http"):
+            return cls._SAFE_URL_FALLBACK
+        if len(url) < 12:
+            return cls._SAFE_URL_FALLBACK
+        return url
+
     @staticmethod
     def _render_item(row: pd.Series) -> list[str]:
         company = str(row.get("company", "")).strip()
@@ -643,6 +697,9 @@ class MarkdownReportWriter:
         insight = str(row.get("insight", "")).strip()
         source  = str(row.get("source", "Unknown"))[:50].strip()
         date_s  = str(row.get("date", ""))[:10]
+
+        # URL 安全过滤：防止非法字符串导致钉钉端无法点击
+        url = MarkdownReportWriter._sanitize_url(url)
 
         parts: list[str] = []
 
@@ -733,10 +790,16 @@ class ESGIntelligenceAgent:
 - 🤝 **常规战略签约**：未涉及出海限制、跨境合规风险或制裁风险的普通商业合作签约
 - 📢 **产品广告/营销**：纯产品发布（无召回/质量丑闻）、品牌营销活动
 - 💹 **纯财报数据**：营收、利润、毛利率等常规财务指标（无 ESG 风险关联）
+- 🤝 **中性商业接洽**：无任何 ESG 负面关联的普通商业合作接洽、跨界投资考察、新产品常规发布等正面/中性新闻（例如：某企业与某机车厂开始接洽合作，或某企业宣布在海外设立销售网点等纯商业拓展消息）。
 
 我们只关心真实的**运营风险**（罢工/事故/污染/社区冲突）与**宏观合规壁垒**（法案/禁令/制裁/出口管制/供应链强制要求）。
 
 ### 步骤 3：四重标签审计（强制打标）
+  ⚠️ 标签归因优先级说明 — 请严格遵照：
+  - **供应链断裂 vs 质量/准入风险的区分**：如果新闻核心是由于热失控、电池缺陷或发动机故障导致的车辆起火、海外大批量召回事件，请优先将其归入【市场准入预警】或【日常运营风险】，并在 tags 中打上【质量合规】标签。**切勿盲目将其归入【供应链断裂预警】**。只有当该事件直接导致了上游电池工厂或关键零部件产线的全面停产时，才允许打上供应链断裂标签。
+
+  **【质量合规】** — 额外标签：用于产品缺陷、召回、起火调查等不能归入宏观合规/资源断供但又涉及品牌与市场信任的重大负面事件。此标签不能单独出现，必须与【市场准入预警】或【日常运营风险】联用。
+
 在输出每一条情报时，必须在 tags 数组中打上适用的标签（可多标签）：
 
 **\u3010机构预警\u3011** — 判定条件：原文链接 URL 包含 `business-humanrights.org`。
@@ -990,11 +1053,13 @@ class ESGIntelligenceAgent:
             MarkdownReportWriter([], self.config, mode=mode).generate()
             return
 
-        # ── Phase 2: Dedup by title ──────────────────────
+        # ── Phase 2: Dedup by title + url (双重去重) ─────
         raw_count = len(self.articles)
-        df_tmp = pd.DataFrame([a.__dict__ for a in self.articles]).drop_duplicates(subset=["title"], keep="first")
+        df_tmp = pd.DataFrame([a.__dict__ for a in self.articles])\
+            .drop_duplicates(subset=["title"], keep="first")\
+            .drop_duplicates(subset=["url"], keep="first")
         self.articles = [NewsArticle(**row.to_dict()) for _, row in df_tmp.iterrows()]
-        logger.info(f"Phase 2 dedup: {raw_count} → {len(self.articles)} articles")
+        logger.info(f"Phase 2 dedup (title+url): {raw_count} → {len(self.articles)} articles")
 
         # ── Phase 3: Deep Content Extraction ────────────
         logger.info(f"Phase 3: Extracting body text from {len(self.articles)} articles...")

@@ -25,6 +25,7 @@ import html
 import json
 import logging
 import os
+os.environ["DEEPSEEK_API_KEY"] = "sk-6110382d87864de58b25ee87b6e06be6"
 import re
 import sys
 import time
@@ -753,147 +754,272 @@ class ESGIntelligenceAgent:
 
     @classmethod
     def _build_system_prompt(cls, company_names: list[str], mode: str) -> str:
-        """构建 DeepSeek System Prompt - v9 四重标签审计版。"""
+        """构建 DeepSeek System Prompt - v10 结构化数据提取引擎版。"""
         companies_str = "\n".join(f"  - {name}" for name in company_names)
-        mode_hint = (
-            "weekly 模式：同时关注宏观政策与地缘合规动态。"
-            if mode == "weekly"
-            else "daily 模式：聚焦日常舆情（劳工、污染、事故、社区冲突）。"
-        )
-        return f"""你是一个顶级的 ESG 供应链风险分析师。你的核心任务是【实体消歧】、【风险提炼】与【四重标签审计】。
+        _ = mode  # 保留参数但不参与 prompt 构建（新 prompt 统一处理）
+        return f"""# Role: ESG 供应链风险数据提取引擎
 
-## 当前运行模式
-{mode_hint}
+# Objective
+你是一个结构化数据提取引擎。你的任务是读取一组繁杂的新闻流，将其清洗、去重、分类，并严格输出为 JSON 格式。
 
-## 目标企业列表（唯一有效实体）
+# Target Entities
+重点监控对象及其关联企业：
 {companies_str}
 
-## 警告：搜索结果中包含大量重名噪音
-例如：搜索中国新能源企业"格林美 GEM"，会出现假肢品牌 GEM、法国互助组织 GEM、珠宝宝石 (gem)、隐藏的宝石 (hidden gem) 等完全无关的内容。
-你必须根据新闻标题、正文摘要、语种和来源媒体，结合新能源/电池材料/钴锂镍矿产行业背景进行严格甄别。
+# Execution Logic (严格执行)
+1. 事件聚类：阅读所有新闻，将描述【同一核心事件】的多条新闻合并为一个独立事件，聚合所有相关来源的媒体名称。
+2. 降噪判定 (is_valid_risk)：
+   - 若实体错误（如"福特省长"、"福特医院"当成福特汽车），值为 false。
+   - 若为正面或无实质风险事件（如减碳成功、引入机器人提升效率、正常商业投资），值为 false。
+   - 只有明确包含物理停摆（关厂/减产）、劳资冲突（罢工/抗议）、质量与安全（召回/事故）、强力制裁等负面冲击时，值才为 true。
+3. 严格分类 (risk_category)：
+   - "供应链断裂预警"：仅限物理层面的供给中断。
+   - "市场准入预警"：仅限进出口禁令、关税、实体清单。绝对排除产品召回。
+   - "合规与运营危机"：包含劳工罢工、重大安全事故、产品召回、严重环保罚单。
+   - "机构与声誉预警"：NGO指控、人权质询等声誉风险。
 
-## 你的处理逻辑（必须严格遵循）
+# Output Format
+你必须仅输出合法的 JSON 数据，不得包含任何 Markdown 标记或额外解释。JSON 结构必须如下：
+{{
+  "events": [
+    {{
+      "entity": "企业全称（必须精确匹配目标企业列表中某一项）",
+      "core_event_title": "一句话概括合并后的核心事件",
+      "executive_insight": "高管洞察：说明实质性影响及潜在风险（50字内）",
+      "date": "最新日期 YYYY-MM-DD",
+      "sources": ["媒体A", "媒体B"],
+      "risk_category": "上述四大分类之一",
+      "is_valid_risk": true
+    }},
+    {{
+      "entity": "亨利·福特医院",
+      "core_event_title": "亨利·福特医院发生罢工",
+      "executive_insight": "实体错误，非监控目标",
+      "date": "2026-05-27",
+      "sources": ["Jacobin"],
+      "risk_category": "机构与声誉预警",
+      "is_valid_risk": false
+    }}
+  ]
+}}
 
-### 步骤 1：实体消歧
-仔细甄别每一条新闻的主体：
-- 如果新闻与上述目标企业（特别是新能源、电池材料行业）**毫无关系**，**请直接将该条目丢弃，不要将其包含在输出 JSON 中**。
-- 例如：假肢品牌 GEM Prosthetics、法国互助组织/协会 GEM、宝石/珠宝类新闻、与矿产/电池/新能源完全无关的 GEM 缩写等 → 统统丢弃。
-- 例如：搜索 CATL（宁德时代）时出现的完全不相关的缩写 CATL → 丢弃。
-
-### 步骤 2：噪音过滤（一票否决）⚠️
-**【绝对过滤指令】**：如果该新闻的核心内容是以下任意一类，**请直接将其丢弃（判定为无效噪音）！绝不要输出这些内容！**：
-- 📉 **股票涨跌**：股价波动、盘中异动、技术分析、资金流向、涨停/跌停
-- 📊 **基金持仓**：基金增减持、仓位调整、ETF 成分股变动
-- 💰 **股息派发**：分红方案、除权除息、股利发放
-- 📝 **常规研报评级**：券商买入/卖出/持有评级、目标价调整（除非研报内容涉及地缘政治或合规风险）
-- 🏢 **企业内部常规会议**：主题党日、研学活动、党建、年会、团建、内部培训
-- 🤝 **常规战略签约**：未涉及出海限制、跨境合规风险或制裁风险的普通商业合作签约
-- 📢 **产品广告/营销**：纯产品发布（无召回/质量丑闻）、品牌营销活动
-- 💹 **纯财报数据**：营收、利润、毛利率等常规财务指标（无 ESG 风险关联）
-- 🤝 **中性商业接洽**：无任何 ESG 负面关联的普通商业合作接洽、跨界投资考察、新产品常规发布等正面/中性新闻（例如：某企业与某机车厂开始接洽合作，或某企业宣布在海外设立销售网点等纯商业拓展消息）。
-
-我们只关心真实的**运营风险**（罢工/事故/污染/社区冲突）与**宏观合规壁垒**（法案/禁令/制裁/出口管制/供应链强制要求）。
-
-### 步骤 3：四重标签审计（强制打标）
-  ⚠️ 标签归因优先级说明 — 请严格遵照：
-  - **供应链断裂 vs 质量/准入风险的区分**：如果新闻核心是由于热失控、电池缺陷或发动机故障导致的车辆起火、海外大批量召回事件，请优先将其归入【市场准入预警】或【日常运营风险】，并在 tags 中打上【质量合规】标签。**切勿盲目将其归入【供应链断裂预警】**。只有当该事件直接导致了上游电池工厂或关键零部件产线的全面停产时，才允许打上供应链断裂标签。
-
-  **【质量合规】** — 额外标签：用于产品缺陷、召回、起火调查等不能归入宏观合规/资源断供但又涉及品牌与市场信任的重大负面事件。此标签不能单独出现，必须与【市场准入预警】或【日常运营风险】联用。
-
-在输出每一条情报时，必须在 tags 数组中打上适用的标签（可多标签）：
-
-**\u3010机构预警\u3011** — 判定条件：原文链接 URL 包含 `business-humanrights.org`。
-   → 含义：商业与人权资源中心（BHRRC）定向抓取到的人权/劳工黑历史记录。属于高可信度机构预警。
-
-**\u3010政策前沿\u3011** — 判定条件：原文链接 URL 包含 `efrag.org`。
-   → 含义：欧盟财务报告咨询组（EFRAG）发布的 CSRD/ESRS/CSDDD 等合规准则更新。属于顶层政策变动信号。
-
-**\u3010市场准入预警\u3011** — 判定条件：新闻内容涉及美国 IRA（通胀削减法案）、FEOC（外国敏感实体规则）、UFLPA（涉疆法案）、实体清单、出口管制，或欧盟电池法案、电池护照、CRMA、CBAM（碳边境调节）、CSRD/CSDDD 供应链尽职调查。
-   → 重点提炼：对企业出海补贴资格、合规成本、市场准入资格的封锁或限制影响。
-
-**\u3010供应链断裂预警\u3011** — 判定条件：新闻内容涉及印尼"下游化"（Hilirisasi）、原矿出口禁令、本地化加工强制要求，或非洲/其他资源国矿产主权、禁止原矿出口政策。
-   → 重点提炼：对上游原材料供应的断供风险、成本上升压力、本地化建厂的强制要求。
-
-**重要**：
-- 所有情报条目都必须至少打上一个标签。标签存放在 tags 数组中（字符串数组）。
-- 例如：tags = ["\u3010供应链断裂预警\u3011", "\u3010市场准入预警\u3011"]
-- 如果无法确定标签，默认使用 ["\u3010供应链合规\u3011"] 作为 fallback。
-
-### 步骤 4：风险提炼
-对于判定为真实目标企业的情报：
-- 赋予一个**通俗专业的业务分类**（如：劳工权益、环境污染、供应链合规、社区冲突、安全事故、可持续发展、监管政策、市场准入、资源民族主义）。
-- **严禁使用任何布尔逻辑词作为分类**！禁止在分类中出现 "OR"、"AND"、"罢工 OR 抗议" 等搜索关键词。
-- 如果新闻内容虽提及目标企业但无实质性 ESG 风险信息，也请遵照步骤 2 的噪音过滤规则剔除。
-
-### 步骤 5：高管洞察撰写
-提炼 ≤50 字的中文高管洞察摘要（纯洞察文本，不含标签前缀），必须明确包含：时间、地点、涉事主体、风险定级。
-- **叙事风格要求**：采用多样化、简练的商业简报叙事风格。像专业的顶级商业调查分析师一样，一语道破核心事件与风险定级，语言自然、犀利且富有穿透力。
-- **坚决避免机械的句式模板**：绝不要每条都以"xxxx年x月，[企业名]..."这类刻板句式开头。请灵活变换表达方式，让每条摘要都具有独立的阅读价值。
-- **注意**：insight 字段仅包含纯文本洞察，标签已通过 tags 字段单独提供，不要在 insight 中重复标签前缀。
-
-### 步骤 6：标题翻译
-将非中文原始标题准确翻译为简体中文，填入 title 字段。
-
-## 强制输出格式
-请严格返回纯 JSON 数组（不要包含任何 markdown 代码块符号如 ```json），JSON 结构：
-[
-  {{
-    "company": "企业全称（必须精确匹配目标企业列表中某一项）",
-    "risk_category": "通俗业务分类（如：劳工权益、环境污染、供应链合规、市场准入、资源民族主义）",
-    "tags": ["【机构预警】", "【市场准入预警】"],
-    "title": "准确完整的中文标题（原文标题的简体中文翻译）",
-    "insight": "≤50字的高管洞察摘要（纯文本，不含标签前缀。例如：印尼镍矿禁令升级，华友钴业面临本地化建厂硬性约束，存在工期延误与成本超支风险。）",
-    "source": "来源媒体名称",
-    "date": "YYYY-MM-DD 格式日期",
-    "url": "原文链接"
-  }}
-]
-
-如果没有符合条件的有效情报，请返回空数组 []。"""
+重要：is_valid_risk 为 false 的条目也必须输出，以便审计追踪。所有新闻（包括被判定为无效的）都必须在 events 数组中占一条记录，通过 is_valid_risk 字段区分。
+如果没有收到任何新闻，请返回 {{ "events": [] }}。"""
 
     # 分批处理常量：每批最多发送的文章数
     BATCH_SIZE = 15
 
     @classmethod
-    def _extract_json_array(cls, text: str) -> Optional[list]:
-        """从 LLM 回复中强行提取合法 JSON 数组并校验。
+    def _extract_events_object(cls, text: str) -> Optional[list]:
+        """从 LLM 回复中提取 v10 events 格式的 JSON 并校验。
 
-        1. 使用正则 r'\\[.*\\]' (DOTALL) 提取最外层的 JSON 数组结构。
+        v10 格式：{ "events": [...] }
+        1. 正则提取最外层 JSON 对象，兼容 markdown 代码块包裹。
         2. json.loads 解析。
-        3. 校验：必须是非空 list，其中至少一条包含 "company" 字段且非空。
+        3. 提取 "events" 键，校验为非空 list。
 
         Returns:
-            解析成功返回 list[dict]，失败返回 None。
+            解析成功返回 events list[dict]，失败返回 None。
         """
         if not text or not text.strip():
             return None
-        # 步骤1: 正则提取最外层 JSON 数组
-        match = re.search(r"\[.*\]", text.strip(), re.DOTALL)
+        # 步骤1: 去除可能的 markdown 代码块包裹
+        clean = text.strip()
+        code_block_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", clean, re.DOTALL)
+        if code_block_match:
+            clean = code_block_match.group(1).strip()
+        # 步骤2: 正则提取最外层 JSON 对象
+        match = re.search(r"\{.*\}", clean, re.DOTALL)
         if not match:
-            logger.warning("_extract_json_array: no JSON array found in LLM response.")
+            logger.warning("_extract_events_object: no JSON object found in LLM response.")
             return None
         candidate = match.group(0)
         try:
             parsed = json.loads(candidate)
         except json.JSONDecodeError as e:
-            logger.warning(f"_extract_json_array: JSON parse failed: {e}")
+            logger.warning(f"_extract_events_object: JSON parse failed: {e}")
             return None
-        # 步骤2: 结构校验
-        if not isinstance(parsed, list):
-            logger.warning("_extract_json_array: parsed result is not a list.")
+        # 步骤3: 结构校验
+        if not isinstance(parsed, dict):
+            logger.warning("_extract_events_object: parsed result is not a dict/object.")
             return None
-        if len(parsed) == 0:
-            # 空数组是合法回复（无有效情报）
-            return []
-        # 步骤3: 至少包含一条有效企业名
-        has_company = any(
-            isinstance(item, dict) and str(item.get("company", "")).strip()
-            for item in parsed
+        events = parsed.get("events", None)
+        if not isinstance(events, list):
+            logger.warning("_extract_events_object: 'events' field missing or not a list.")
+            return None
+        if len(events) == 0:
+            return []  # 合法空回复
+        # 步骤4: 至少包含一条有效企业名
+        has_entity = any(
+            isinstance(item, dict) and str(item.get("entity", "")).strip()
+            for item in events
         )
-        if not has_company:
-            logger.warning("_extract_json_array: parsed array has no items with non-empty 'company' field — discarding.")
+        if not has_entity:
+            logger.warning("_extract_events_object: events array has no items with non-empty 'entity' field — discarding.")
             return None
-        return parsed
+        return events
+
+    @classmethod
+    def _generate_v10_report_and_filter(cls, all_events: list[dict], mode: str, report_path: str = "esg_global_report.md") -> list[dict]:
+        """Python 确定性渲染流水线：过滤 → 分组 → 生成 Markdown 报告。
+
+        所有降噪逻辑由 Python if-else 物理执行，不依赖 LLM 判断。
+        Returns: v9 兼容的 dict 列表，用于下游日志统计。
+        """
+        # ── 1. 确定性降噪（Python 物理隔绝） ──
+        invalid_events: list[dict] = []
+        valid_events: list[dict] = []
+        for event in all_events:
+            if not isinstance(event, dict):
+                continue
+            if event.get("is_valid_risk") is False:
+                invalid_events.append(event)
+            else:
+                valid_events.append(event)
+
+        # 审计日志
+        for e in invalid_events:
+            logger.info(f"[v10 降噪] 已过滤: {e.get('entity', '?')} | {e.get('core_event_title', '?')[:60]}")
+        logger.info(f"Python 降噪: {len(invalid_events)} invalid → dropped, {len(valid_events)} valid → report")
+
+        # ── 2. 按风险类别分组 ──
+        categorized: dict[str, list[dict]] = {
+            "供应链断裂预警": [],
+            "政策与市场准入": [],
+            "合规与运营危机": [],
+            "机构与声誉预警": [],
+        }
+        for event in valid_events:
+            cat = str(event.get("risk_category", "")).strip()
+            # 映射 LLM 可能输出的 "市场准入预警" → "政策与市场准入"
+            if cat == "市场准入预警":
+                cat = "政策与市场准入"
+            if cat in categorized:
+                categorized[cat].append(event)
+            else:
+                categorized["合规与运营危机"].append(event)
+
+        # ── 3. 推断时间跨度与标题 ──
+        all_dates = [e.get("date", "") for e in valid_events]
+        if all_dates:
+            dmin = min(all_dates)
+            dmax = max(all_dates)
+            # 若最早与最晚日期为同一天 → 日报，否则 → 周报
+            is_daily = (dmin == dmax)
+        else:
+            dmin = dmax = "?"
+            is_daily = False
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if is_daily:
+            title = "🔴【每日风险快报】ESG 全球供应链动态 (Daily Flash)"
+        else:
+            title = "🔮【宏观合规战略】ESG 全球地缘与合规周报 (Weekly Insight)"
+
+        # ── 4. 生成 Markdown 报告 ──
+        lines: list[str] = [
+            f"# {title}",
+            "",
+            f"> 📅 **生成时间**: {now_str} CST",
+            f"> 📊 **情报总数**: {len(valid_events)} 条（经降噪聚类后） | 涉及企业: {len(set(e.get('entity', '') for e in valid_events))} 家",
+            f"> 📆 **覆盖时段**: {dmin} ~ {dmax}",
+            f"> ⚡ **降噪说明**: 原始 {len(all_events)} 条 → Python is_valid_risk 过滤 {len(invalid_events)} 条 → 最终产出 {len(valid_events)} 条",
+            "",
+            "---",
+            "",
+            "## 📑 目录",
+            "",
+        ]
+
+        category_cn_names = {
+            "供应链断裂预警": "供应链断裂预警",
+            "政策与市场准入": "政策与市场准入",
+            "合规与运营危机": "合规与运营危机",
+            "机构与声誉预警": "机构与声誉预警",
+        }
+        category_descriptions = {
+            "供应链断裂预警": "仅限物理层面的供给中断（工厂停产、物流瘫痪、核心供应商断供）",
+            "政策与市场准入": "仅限引发无法卖货/买货的事件（实体清单、关税惩罚、进出口禁令、强迫劳动扣留）",
+            "合规与运营危机": "劳工罢工、重大安全事故、产品召回、严重环保罚单引发的即期运营阻断",
+            "机构与声誉预警": "NGO指控、人权机构质询、评级下调等尚未演变为实质停产的高声誉风险事件",
+        }
+
+        # 目录
+        for cat_key, cat_name in category_cn_names.items():
+            evs = categorized.get(cat_key, [])
+            if not evs:
+                continue
+            lines.append(f"- **【{cat_name}】**（{len(evs)} 条）")
+            entity_counts: dict[str, int] = {}
+            for e in evs:
+                ent = str(e.get("entity", "")).strip()
+                entity_counts[ent] = entity_counts.get(ent, 0) + 1
+            for ent in sorted(entity_counts.keys()):
+                lines.append(f"  - {ent}: {entity_counts[ent]} 条")
+            lines.append("")
+
+        lines += ["---", ""]
+
+        # 各分类内容
+        for cat_key, cat_name in category_cn_names.items():
+            evs = categorized.get(cat_key, [])
+            if not evs:
+                continue
+            desc = category_descriptions.get(cat_key, "")
+            lines.append(f"## 【{cat_name}】")
+            lines.append(f"> {desc}")
+            lines.append("")
+
+            for e in evs:
+                entity = str(e.get("entity", "")).strip()
+                title_text = str(e.get("core_event_title", "")).strip()
+                insight = str(e.get("executive_insight", "")).strip()
+                date = str(e.get("date", ""))[:10]
+                sources_raw = e.get("sources", [])
+                if isinstance(sources_raw, list):
+                    sources_str = ", ".join(str(s) for s in sources_raw if s)
+                else:
+                    sources_str = str(sources_raw) if sources_raw else "Unknown"
+
+                lines.append(f"**{entity} | {title_text}**")
+                lines.append("")
+                lines.append(f"💡 高管洞察：{insight}")
+                lines.append("")
+                lines.append(f"📅 {date} | 📰 信息源聚合：{sources_str}")
+                lines.append("")
+                lines.append("---")
+                lines.append("")
+
+        lines += [
+            "---",
+            "",
+            "🤖 *本报告由 ESG Intelligence Agent 驱动，严格遵循「LLM JSON 提取 → Python 确定性降噪 → 模板渲染」三级清洗管线。*",
+            "⚠️  *数据来源为公开 RSS 新闻源，仅供决策参考，不构成投资或法律建议。*",
+        ]
+
+        report_md = "\n".join(lines)
+        Path(report_path).write_text(report_md, encoding="utf-8")
+        logger.info(f"v10 report written: {report_path} ({len(valid_events)} valid / {len(invalid_events)} invalid)")
+
+        # 返回 v9 兼容格式用于 run() 日志统计
+        compatible: list[dict] = []
+        for e in valid_events:
+            sources_raw = e.get("sources", [])
+            if isinstance(sources_raw, list):
+                source_str = ", ".join(str(s) for s in sources_raw if s)
+            else:
+                source_str = str(sources_raw) if sources_raw else "Unknown"
+            risk_cat = str(e.get("risk_category", "")).strip()
+            compatible.append({
+                "company": str(e.get("entity", "")).strip(),
+                "title": str(e.get("core_event_title", "")).strip(),
+                "insight": str(e.get("executive_insight", "")).strip(),
+                "source": source_str,
+                "date": str(e.get("date", ""))[:10],
+                "tags": [risk_cat] if risk_cat else ["日常运营风险"],
+                "url": str(e.get("url", "")).strip(),
+            })
+        return compatible
 
     @classmethod
     def _build_articles_text(cls, batch: list[dict], start_idx: int) -> str:
@@ -916,12 +1042,17 @@ class ESGIntelligenceAgent:
         return "\n\n".join(parts)
 
     def process_intelligence_with_llm(self, raw_data_list: list[dict], mode: str = "daily") -> list[dict]:
-        """分批将文章发送至 DeepSeek，进行语义降噪与四重标签审计。
+        """分批将文章发送至 DeepSeek，收集所有 v10 原始 events 数据。
 
-        ═══ 核心改动（反降级重构） ═══
+        ═══ 核心改动（v10 流水线） ═══
         • BATCH_SIZE=15 分批处理，防止单次数据量过大导致 JSON 崩溃。
-        • 使用 _extract_json_array() 正则强提取 + 企业名校验。
+        • 使用 _extract_events_object() 提取 { "events": [...] }。
+        • 所有批次的事件汇总后，由 _generate_v10_report_and_filter() 统一过滤和渲染。
         • 批次失败直接丢弃该批次数据，绝不回退到原始数据。
+
+        Returns:
+            所有批次汇总的 v10 原始 events 列表（含 is_valid_risk=true/false），
+            供 _generate_v10_report_and_filter 进行 Python 确定性降噪。
         """
         if not raw_data_list:
             logger.info("No raw data to process with LLM.")
@@ -940,7 +1071,7 @@ class ESGIntelligenceAgent:
             f"(BATCH_SIZE={self.BATCH_SIZE}, mode={mode})"
         )
 
-        all_results: list[dict] = []
+        all_events: list[dict] = []
         client = OpenAI(api_key=api_key, base_url=self.DEEPSEEK_BASE_URL)
 
         for batch_idx in range(batch_count):
@@ -958,6 +1089,7 @@ class ESGIntelligenceAgent:
                         {"role": "system", "content": self._build_system_prompt(company_names, mode)},
                         {"role": "user", "content": user_message},
                     ],
+                    response_format={"type": "json_object"},
                     temperature=0.1,
                     max_tokens=8192,
                 )
@@ -965,7 +1097,7 @@ class ESGIntelligenceAgent:
                 raw_output = response.choices[0].message.content or ""
                 logger.info(f"  LLM response received ({len(raw_output)} chars).")
 
-                parsed = self._extract_json_array(raw_output)
+                parsed = self._extract_events_object(raw_output)
                 if parsed is None:
                     logger.warning(
                         f"  ⚠ Batch {batch_idx + 1} failed JSON extraction/validation — "
@@ -973,8 +1105,9 @@ class ESGIntelligenceAgent:
                     )
                     continue
 
-                all_results.extend(parsed)
-                logger.info(f"  Batch {batch_idx + 1}: {len(parsed)} intelligence items extracted.")
+                all_events.extend(parsed)
+                valid_in_batch = sum(1 for e in parsed if e.get("is_valid_risk") is not False)
+                logger.info(f"  Batch {batch_idx + 1}: {len(parsed)} events ({valid_in_batch} valid) extracted.")
 
             except Exception as e:
                 logger.warning(
@@ -983,8 +1116,8 @@ class ESGIntelligenceAgent:
                 )
                 continue
 
-        logger.info(f"LLM processing complete: {len(all_results)} total intelligence items from {batch_count} batch(es).")
-        return all_results
+        logger.info(f"LLM processing complete: {len(all_events)} total events from {batch_count} batch(es).")
+        return all_events
 
     # ── 钉钉推送 ──────────────────────────────────────────
 
@@ -1153,18 +1286,19 @@ class ESGIntelligenceAgent:
                 "description": article.description,
             })
 
-        intelligence_json = self.process_intelligence_with_llm(raw_data_list, mode)
-        logger.info(f"Phase 4 done. LLM returned {len(intelligence_json)} intelligence items.")
+        all_v10_events = self.process_intelligence_with_llm(raw_data_list, mode)
+        logger.info(f"Phase 4 done. LLM returned {len(all_v10_events)} total events (valid + invalid).")
 
-        # ── Phase 5: Report ──────────────────────────────
+        # ── Phase 5: Python 确定性渲染流水线 ─────────────
         report_path = "esg_global_report.md"
-        MarkdownReportWriter(intelligence_json, self.config, mode=mode).generate(report_path)
+        intelligence_json = self._generate_v10_report_and_filter(all_v10_events, mode, report_path)
+        logger.info(f"Phase 5 done. Python pipeline: {len(intelligence_json)} valid items → {report_path}")
 
         elapsed = time.monotonic() - t0
         date_values = [item.get("date", "") for item in intelligence_json]
         dmin = min(date_values) if date_values else "?"
         dmax = max(date_values) if date_values else "?"
-        logger.info(f"All done in {elapsed:.1f}s | {len(intelligence_json)} items | {dmin} ~ {dmax}")
+        logger.info(f"All done in {elapsed:.1f}s | {len(intelligence_json)} valid items | {dmin} ~ {dmax}")
 
     def __init__(self, config_path: str = "config.yaml"):
         self.config = AgentConfig.from_yaml(config_path)

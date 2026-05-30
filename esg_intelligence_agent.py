@@ -772,11 +772,23 @@ class ESGIntelligenceAgent:
    - 若实体错误（如"福特省长"、"福特医院"当成福特汽车），值为 false。
    - 若为正面或无实质风险事件（如减碳成功、引入机器人提升效率、正常商业投资），值为 false。
    - 只有明确包含物理停摆（关厂/减产）、劳资冲突（罢工/抗议）、质量与安全（召回/事故）、强力制裁等负面冲击时，值才为 true。
-3. 严格分类 (risk_category)：
-   - "供应链断裂预警"：仅限物理层面的供给中断。
-   - "市场准入预警"：仅限进出口禁令、关税、实体清单。绝对排除产品召回。
-   - "合规与运营危机"：包含劳工罢工、重大安全事故、产品召回、严重环保罚单。
-   - "机构与声誉预警"：NGO指控、人权质询等声誉风险。
+3. 严格分类 (risk_category) 与负面清单：
+   - "供应链断裂预警"：仅限物理层面的供给中断（工厂因灾停产、矿端断供、核心供应商破产、物流瘫痪）。【负面清单】以下内容绝对不属于本类，必须归入 is_valid_risk=false 并直接丢弃：投资/股价波动、财报亏损、M&A/股权转让、需求疲软/销量下滑、新产品发布、技术合作、融资/增资。遇到这些话题时 risk_category 填入"无关噪音"且 is_valid_risk=false。
+   - "市场准入预警"：仅限进出口禁令、关税惩罚、实体清单、强迫劳动货物扣留。【负面清单】绝对排除产品召回、质量事故、软件故障——这些归入"合规与运营危机"。
+   - "合规与运营危机"：包含劳工罢工/抗议、重大安全事故（爆炸/矿难）、产品召回、车辆起火、软件安全缺陷、严重环保罚单。
+   - "机构与声誉预警"：NGO指控、人权机构质询、评级下调等尚未演变为实质停产的高声誉风险事件。
+
+# Executive Insight 生成规则（严格执行）
+1. 结构铁律：每条 insight 必须遵循"事件定性 → 链条传导 → 应对建议"三段式逻辑。
+2. 视角强制：必须从供应链尽职调查合规压力（如 CSRD/CSDDD/LkSG 穿透管理难度）或产能连续性危机（如停产对下游交付的链式冲击）角度出发。
+3. 字数红线：50-80 汉字或英文单词，低于 50 或超过 80 视为违规。
+4. 禁止废话：严禁使用"可能影响运营""面临声誉风险""需持续关注"等空洞套话。必须指明具体受影响环节和可操作建议。
+5. 正例（合规）：
+   - "宝马韩国市场因发动机起火被禁售，触发韩国《汽车管理法》召回程序。建议立即穿透排查该型号所涉上游供应商质量体系，梳理在韩库存及替代市场分流方案，避免因连锁禁售导致欧洲及北美市场监管跟进。"
+   - "特斯拉瑞典维修工人罢工虽规模缩减，但 IF Metall 工会仍维持封锁。需评估该事件对北欧其他市场的示范效应，提前与当地劳资委员会建立沟通管道，防止罢工潮蔓延至德国超级工厂。"
+6. 反例（违规，绝不可输出）：
+   - "可能影响运营" — 空洞无物，违反规则4。
+   - "面临声誉风险" — 未说明传导链条，违反规则1。
 
 # Output Format
 你必须仅输出合法的 JSON 数据，不得包含任何 Markdown 标记或额外解释。JSON 结构必须如下：
@@ -785,7 +797,7 @@ class ESGIntelligenceAgent:
     {{
       "entity": "企业全称（必须精确匹配目标企业列表中某一项）",
       "core_event_title": "一句话概括合并后的核心事件",
-      "executive_insight": "高管洞察：说明实质性影响及潜在风险（50字内）",
+      "executive_insight": "事件定性 + 链条传导 + 应对建议，50-80字，从供应链尽职调查或产能连续性视角出发",
       "date": "最新日期 YYYY-MM-DD",
       "sources": ["媒体A", "媒体B"],
       "risk_category": "上述四大分类之一",
@@ -1149,7 +1161,7 @@ class ESGIntelligenceAgent:
 
     # ── 入口 ─────────────────────────────────────────────
 
-    def run(self, mode: str = "daily") -> None:
+    def run(self, mode: str = "daily", report_path: str = "esg_global_report.md") -> None:
         t0 = time.monotonic()
         logger.info(f"═══ ESG Intelligence Agent v9 | Mode: {mode.upper()} ═══")
 
@@ -1183,7 +1195,7 @@ class ESGIntelligenceAgent:
         logger.info(f"Phase 1 done. Skipped {skipped} old. Collected {len(self.articles)} articles.")
 
         if not self.articles:
-            MarkdownReportWriter([], self.config, mode=mode).generate()
+            MarkdownReportWriter([], self.config, mode=mode).generate(report_path)
             return
 
         # ── Phase 2: Dedup by title + url (双重去重) ─────
@@ -1229,7 +1241,7 @@ class ESGIntelligenceAgent:
         logger.info(f"Phase 2.5 entity filter: {pre_filter_count} → {len(self.articles)}")
 
         if not self.articles:
-            MarkdownReportWriter([], self.config, mode=mode).generate()
+            MarkdownReportWriter([], self.config, mode=mode).generate(report_path)
             return
 
         # ── Phase 2.6: Per-Company Throttle (漏斗限流) ──
@@ -1290,7 +1302,6 @@ class ESGIntelligenceAgent:
         logger.info(f"Phase 4 done. LLM returned {len(all_v10_events)} total events (valid + invalid).")
 
         # ── Phase 5: Python 确定性渲染流水线 ─────────────
-        report_path = "esg_global_report.md"
         intelligence_json = self._generate_v10_report_and_filter(all_v10_events, mode, report_path)
         logger.info(f"Phase 5 done. Python pipeline: {len(intelligence_json)} valid items → {report_path}")
 
@@ -1337,11 +1348,25 @@ def parse_args() -> argparse.Namespace:
         default="config.yaml",
         help="配置文件路径（默认: config.yaml）",
     )
+    parser.add_argument(
+        "--report",
+        default="esg_global_report.md",
+        help="报告输出路径（默认: esg_global_report.md）",
+    )
+    parser.add_argument(
+        "--no-push",
+        action="store_true",
+        default=False,
+        help="跳过钉钉 Webhook 推送",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
     agent = ESGIntelligenceAgent(config_path=args.config)
-    agent.run(mode=args.mode)
-    agent.push_to_dingtalk(mode=args.mode)
+    agent.run(mode=args.mode, report_path=args.report)
+    if not args.no_push:
+        agent.push_to_dingtalk(mode=args.mode)
+    else:
+        logger.info("钉钉推送已跳过（--no-push）。")

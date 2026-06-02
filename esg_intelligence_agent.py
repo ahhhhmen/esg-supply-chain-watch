@@ -768,7 +768,13 @@ class ESGIntelligenceAgent:
 {companies_str}
 
 # Execution Logic (严格执行)
-1. 事件聚类：阅读所有新闻，将描述【同一核心事件】的多条新闻合并为一个独立事件，聚合所有相关来源的媒体名称和对应 URL。
+1. 事件聚类（最高优先级强制规则）：
+   阅读所有新闻，将描述【同一核心事件】的多条新闻强制合并为一个独立事件。判断标准：
+   - 同一企业在同一时间发生的同一类事件（如"特斯拉瑞典罢工""宝马韩国起火"）不论有多少家媒体以不同标题报道，都必须合并为一条 event。
+   - 合并后的 event 必须聚合所有相关来源的媒体名称和对应 URL，放入 sources 数组。
+   - 聚合后，只能保留一条最优的 core_event_title（选用最简洁准确的那个标题）。
+   - 严禁将同一事件的多个媒体报道拆分为多条独立 event。
+
 2. 降噪判定 (is_valid_risk)：
    - 若实体错误（如"福特省长"、"福特医院"当成福特汽车），值为 false。
    - 若为正面或无实质风险事件（如减碳成功、引入机器人提升效率、正常商业投资），值为 false。
@@ -778,6 +784,32 @@ class ESGIntelligenceAgent:
    - "市场准入预警"：仅限进出口禁令、关税惩罚、实体清单、强迫劳动货物扣留。【负面清单】绝对排除产品召回、质量事故、软件故障——这些归入"合规与运营危机"。
    - "合规与运营危机"：包含劳工罢工/抗议、重大安全事故（爆炸/矿难）、产品召回、车辆起火、软件安全缺陷、严重环保罚单。
    - "机构与声誉预警"：NGO指控、人权机构质询、评级下调等尚未演变为实质停产的高声誉风险事件。
+
+4. 材料冲击判定 (is_direct_material_impact) — 绝对红线：
+   你必须对每条 is_valid_risk=true 的事件额外输出布尔值字段 is_direct_material_impact，判定该事件是否对上游电池材料（前驱体/正极材料/镍钴锂资源）存在直接的供应链、订单或合规穿透冲击。
+   
+   【必须判定为 false 的硬性负面判例（Few-Shot）】：
+   · 终端软件故障（OTA升级缺陷、车机黑屏/卡顿、自动驾驶软件算法召回）→ false。理由：纯软件层面，不涉及电池硬件更换。
+   · 无人驾驶车祸（ADAS/FSD 导致的碰撞事故）→ false。理由：感知/控制算法缺陷，除非官方调查报告明确指出动力电池为起火主因。
+   · 车机系统偶发爆炸/起火，且起火点被确认为 12V 低压电气系统或座舱电子设备（非高压动力电池）→ false。
+   · 主机厂因软件问题发起 OTA 远程召回（无需进厂更换硬件）→ false。
+   · 终端车企的营销争议、定价纠纷、经销商维权 → false。理由：不触及零部件采购体系。
+   
+   【必须判定为 true 的触发条件】：
+   · 动力电池（高压电池包/电芯/模组）起火、召回、停产。
+   · 正极材料/前驱体/电解液/隔膜等上游材料的质量缺陷被公开披露。
+   · 镍/钴/锂矿端停产、禁运、出口管制、矿山事故。
+   · 电池工厂（Gigafactory）爆炸、火灾、罢工导致停工。
+   · 欧盟/美国针对电池材料的反倾销税、强迫劳动禁令、碳足迹准入门槛。
+   
+   【灰度条款 — 官方声明未出前默认 false】：
+   · 若事件属于「电动汽车起火但起火原因未公布」，在无官方（NHTSA/车企/消防部门）明确声明指向动力电池前 → 默认 false。
+   · 若事件属于「整车召回但未公布具体涉及零部件清单」→ 默认 false。
+   
+   【is_direct_material_impact 为 false 时 executive_insight 的强制写作规则】：
+   当 is_direct_material_impact=false 时，executive_insight 必须如实写为：
+   "该事件属于车企终端运营/技术故障，当前链条未传导至上游材料端。"
+   严禁在 is_direct_material_impact=false 的情况下生搬硬套任何「订单波动」「供应链不确定性」「材料需求变化」等废话。
 
 # Executive Insight 生成规则（严格执行 — 华友钴业中心制）
 1. 身份锚定：华友钴业是全球领先的新能源锂电上游材料供应商，主营前驱体（Precursor）与正极材料（Cathode Active Material），核心下游客户包括特斯拉、宝马、奔驰、大众等全球主机厂及电池制造商。所有 insight 必须从华友钴业的产业位置出发进行传导推演。
@@ -807,7 +839,8 @@ class ESGIntelligenceAgent:
       "date": "最新日期 YYYY-MM-DD",
       "sources": [{{"name": "媒体A", "url": "https://example.com/articleA"}}, {{"name": "媒体B", "url": "https://example.com/articleB"}}],
       "risk_category": "上述四大分类之一",
-      "is_valid_risk": true
+      "is_valid_risk": true,
+      "is_direct_material_impact": true
     }},
     {{
       "entity": "亨利·福特医院",
@@ -816,12 +849,13 @@ class ESGIntelligenceAgent:
       "date": "2026-05-27",
       "sources": [{{"name": "Jacobin", "url": "https://jacobin.com/example"}}],
       "risk_category": "机构与声誉预警",
-      "is_valid_risk": false
+      "is_valid_risk": false,
+      "is_direct_material_impact": false
     }}
   ]
 }}
 
-重要：is_valid_risk 为 false 的条目也必须输出，以便审计追踪。所有新闻（包括被判定为无效的）都必须在 events 数组中占一条记录，通过 is_valid_risk 字段区分。
+重要：is_valid_risk 为 false 的条目也必须输出，以便审计追踪。所有新闻（包括被判定为无效的）都必须在 events 数组中占一条记录，通过 is_valid_risk 字段区分。每条记录都必须包含 is_direct_material_impact 布尔值字段，不可省略。
 sources 字段中的每个元素必须包含 name（媒体名称）和 url（新闻原文直链，优先使用输入数据中提供的已解密 URL）。
 如果没有收到任何新闻，请返回 {{ "events": [] }}。"""
 
@@ -878,28 +912,153 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             return None
         return events
 
+    # ── 语义合并常量 ──────────────────────────────────────
+    _MERGE_SIMILARITY_THRESHOLD = 0.45  # Jaccard 相似度阈值：>= 此值视为同一事件
+    _WORD_PATTERN = re.compile(r"\w+", re.UNICODE)
+
+    @classmethod
+    def _merge_same_company_events(cls, events: list[dict]) -> list[dict]:
+        """同公司同质化事件语义合并：将同一企业下高度相似的事件合并为一条，聚合多源信息。
+
+        在 LLM 跨批次处理时，同一企业的同一事件可能被分散到不同批次中，
+        LLM 无法跨批次合并。此函数在 Python 端执行二次合并：
+        1. 按 entity（企业名）分组。
+        2. 每组内对 core_event_title 做 Jaccard 词级相似度比对。
+        3. 相似度 >= 阈值的合并为一条，聚合所有 sources 并去重。
+        4. 保留最新的 date 作为合并后日期。
+        """
+        if not events:
+            return []
+
+        # 按企业分组
+        entity_groups: dict[str, list[dict]] = {}
+        for e in events:
+            ent = str(e.get("entity", "")).strip().lower()
+            if ent not in entity_groups:
+                entity_groups[ent] = []
+            entity_groups[ent].append(e)
+
+        merged: list[dict] = []
+        for ent, group in entity_groups.items():
+            if len(group) <= 1:
+                merged.extend(group)
+                continue
+
+            used = [False] * len(group)
+            for i in range(len(group)):
+                if used[i]:
+                    continue
+                base = group[i]
+                base_title = str(base.get("core_event_title", "")).strip().lower()
+                base_tokens = set(cls._WORD_PATTERN.findall(base_title))
+
+                all_sources: list[dict] = []
+                seen_source_urls: set[str] = set()
+                # 收集 base 的 sources
+                for s in base.get("sources", []):
+                    if isinstance(s, dict):
+                        s_url = str(s.get("url", "")).strip()
+                        if s_url and s_url not in seen_source_urls:
+                            seen_source_urls.add(s_url)
+                            all_sources.append(s)
+                        elif not s_url:
+                            all_sources.append(s)
+                    elif isinstance(s, str):
+                        all_sources.append({"name": s, "url": ""})
+
+                all_dates = [str(base.get("date", ""))[:10]]
+
+                for j in range(i + 1, len(group)):
+                    if used[j]:
+                        continue
+                    other = group[j]
+                    other_title = str(other.get("core_event_title", "")).strip().lower()
+                    other_tokens = set(cls._WORD_PATTERN.findall(other_title))
+
+                    if not base_tokens or not other_tokens:
+                        continue
+
+                    overlap = len(base_tokens & other_tokens)
+                    union = len(base_tokens | other_tokens)
+                    similarity = overlap / union if union > 0 else 0
+
+                    if similarity >= cls._MERGE_SIMILARITY_THRESHOLD:
+                        used[j] = True
+                        # 合并 sources
+                        for s in other.get("sources", []):
+                            if isinstance(s, dict):
+                                s_url = str(s.get("url", "")).strip()
+                                if s_url and s_url not in seen_source_urls:
+                                    seen_source_urls.add(s_url)
+                                    all_sources.append(s)
+                                elif not s_url:
+                                    all_sources.append(s)
+                            elif isinstance(s, str):
+                                all_sources.append({"name": s, "url": ""})
+                        all_dates.append(str(other.get("date", ""))[:10])
+                        logger.info(
+                            f"[语义合并] {ent}: "
+                            f"'{base_title[:50]}…' ← '{other_title[:50]}…' "
+                            f"(相似度={similarity:.2f})"
+                        )
+
+                merged_event: dict = {
+                    "entity": base.get("entity", ""),
+                    "core_event_title": base.get("core_event_title", ""),
+                    "executive_insight": base.get("executive_insight", ""),
+                    "date": max(d for d in all_dates if d) if all_dates else base.get("date", ""),
+                    "sources": all_sources,
+                    "risk_category": base.get("risk_category", ""),
+                    "is_valid_risk": base.get("is_valid_risk", True),
+                    "is_direct_material_impact": base.get("is_direct_material_impact", True),
+                }
+                merged.append(merged_event)
+
+        logger.info(
+            f"语义合并: {len(events)} raw events -> {len(merged)} after same-company semantic dedup "
+            f"(threshold={cls._MERGE_SIMILARITY_THRESHOLD})"
+        )
+        return merged
+
     @classmethod
     def _generate_v10_report_and_filter(cls, all_events: list[dict], mode: str, report_path: str = "esg_global_report.md") -> list[dict]:
-        """Python 确定性渲染流水线：过滤 → 分组 → 生成 Markdown 报告。
+        """Python 确定性渲染流水线：过滤 → 语义合并 → 分组 → 生成 Markdown 报告。
 
         所有降噪逻辑由 Python if-else 物理执行，不依赖 LLM 判断。
         Returns: v9 兼容的 dict 列表，用于下游日志统计。
         """
         # ── 1. 确定性降噪（Python 物理隔绝） ──
         invalid_events: list[dict] = []
+        non_material_events: list[dict] = []
         valid_events: list[dict] = []
         for event in all_events:
             if not isinstance(event, dict):
                 continue
             if event.get("is_valid_risk") is False:
                 invalid_events.append(event)
+            elif event.get("is_direct_material_impact") is False:
+                non_material_events.append(event)
             else:
                 valid_events.append(event)
 
         # 审计日志
         for e in invalid_events:
-            logger.info(f"[v10 降噪] 已过滤: {e.get('entity', '?')} | {e.get('core_event_title', '?')[:60]}")
-        logger.info(f"Python 降噪: {len(invalid_events)} invalid -> dropped, {len(valid_events)} valid -> report")
+            logger.info(f"[v10 降噪] 已过滤(无效风险): {e.get('entity', '?')} | {e.get('core_event_title', '?')[:60]}")
+        for e in non_material_events:
+            logger.info(f"[v10 降噪] 已过滤(非材料冲击): {e.get('entity', '?')} | {e.get('core_event_title', '?')[:60]}")
+        logger.info(
+            f"Python 降噪: {len(invalid_events)} invalid + {len(non_material_events)} non-material -> dropped, "
+            f"{len(valid_events)} material-impact -> report"
+        )
+
+        # ── 1.5. 同公司同质化事件语义合并 ──
+        pre_merge_count = len(valid_events)
+        valid_events = cls._merge_same_company_events(valid_events)
+        if len(valid_events) < pre_merge_count:
+            logger.info(
+                f"语义合并: {pre_merge_count} -> {len(valid_events)} events "
+                f"(移除 {pre_merge_count - len(valid_events)} 条同质化重复)"
+            )
 
         # ── 2. 按风险类别分组 ──
         categorized: dict[str, list[dict]] = {
@@ -963,19 +1122,13 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             "机构与声誉预警": "NGO指控、人权机构质询、评级下调等尚未演变为实质停产的高声誉风险事件",
         }
 
-        # 目录
+        # 目录 — 单行简洁格式，无子项拆分
         for cat_key, cat_name in category_cn_names.items():
             evs = categorized.get(cat_key, [])
             if not evs:
                 continue
             lines.append(f"- **【{cat_name}】**（{len(evs)} 条）")
-            entity_counts: dict[str, int] = {}
-            for e in evs:
-                ent = str(e.get("entity", "")).strip()
-                entity_counts[ent] = entity_counts.get(ent, 0) + 1
-            for ent in sorted(entity_counts.keys()):
-                lines.append(f"  - {ent}: {entity_counts[ent]} 条")
-            lines.append("")
+        lines.append("")
 
         lines += ["---", ""]
 
@@ -988,6 +1141,9 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             lines.append(f"## 【{cat_name}】")
             lines.append(f"> {desc}")
             lines.append("")
+
+            # 按日期降序排列
+            evs.sort(key=lambda e: str(e.get("date", "")), reverse=True)
 
             for e in evs:
                 entity = str(e.get("entity", "")).strip()
@@ -1028,8 +1184,8 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         lines += [
             "---",
             "",
-            "🤖 *本报告由 ESG Intelligence Agent 驱动，严格遵循「LLM JSON 提取 -> Python 确定性降噪 -> 模板渲染」三级清洗管线。*",
-            "⚠️  *数据来源为公开 RSS 新闻源，仅供决策参考，不构成投资或法律建议。*",
+            "🤖 *本报告由 ESG Intelligence Agent 自动生成，数据来源于公开新闻源。*",
+            "⚠️  *仅供决策参考，不构成投资或法律建议。*",
         ]
 
         report_md = "\n".join(lines)

@@ -1,125 +1,42 @@
-# 🔮【宏观合规战略】ESG 全球地缘与合规周报 (Weekly Insight)
+# 🏛️ ESG 全球地缘与合规周报 (Weekly Strategy Insight)
 
-> 📅 **生成时间**: 2026-05-31 01:46:40 CST
-> 📊 **情报总数**: 10 条（经降噪聚类后） | 涉及企业: 5 家
-> 📆 **覆盖时段**: 2026-05-23 ~ 2026-05-30
-> ⚡ **降噪说明**: 原始 96 条 → Python is_valid_risk 过滤 86 条 → 最终产出 10 条
+> 🔮【宏观合规战略】全球地缘与准入壁垒周报
+> 📅 **生成时间**: 2026-06-02 23:07:12
+> 📊 **情报总数**: 2 条 | 涉及企业: 2 家
+> 📆 **覆盖时段**: 2026-06-01 ~ 2026-06-02
 
 ---
 
 ## 📑 目录
 
-- **【供应链断裂预警】**（2 条）
-  - 特斯拉: 1 条
-  - 通用汽车: 1 条
-
-- **【政策与市场准入】**（1 条）
-  - 梅赛德斯-奔驰 | Mercedes-Benz: 1 条
-
-- **【合规与运营危机】**（6 条）
-  - 宝马 | BMW: 1 条
-  - 梅赛德斯-奔驰 | Mercedes-Benz: 1 条
-  - 特斯拉: 2 条
-  - 通用汽车: 2 条
-
-- **【机构与声誉预警】**（1 条）
-  - 青山控股: 1 条
+- **【供应链断裂预警】**（1 条）
+- **【合规与运营危机】**（1 条）
 
 ---
 
 ## 【供应链断裂预警】
 > 仅限物理层面的供给中断（工厂停产、物流瘫痪、核心供应商断供）
 
-**特斯拉 | 特斯拉德国工厂半数产能闲置**
+**通用汽车 | General Motors | UAW在通用汽车关键卡车供应商工厂举行罢工**
 
-💡 高管洞察：德国工厂产能闲置可能源于需求或生产问题。建议立即排查供应链及生产瓶颈，评估对欧洲交付的影响，并制定产能恢复计划。
+💡 高管洞察：UAW在通用汽车关键卡车供应商工厂罢工，可能导致通用卡车生产中断。华友钴业作为通用汽车电池材料供应商，需关注罢工对通用汽车电池订单的潜在影响，若通用减产将减少对前驱体及正极材料的需求。
 
-📅 2026-05-29 | 📰 信息源聚合：汽车之家
-
----
-
-**通用汽车 | 通用汽车削减两家工厂产量**
-
-💡 高管洞察：减产可能影响供应链连续性，需评估对下游交付的冲击。
-
-📅 2026-05-27 | 📰 信息源聚合：Reliable Plant
-
----
-
-## 【政策与市场准入】
-> 仅限引发无法卖货/买货的事件（实体清单、关税惩罚、进出口禁令、强迫劳动扣留）
-
-**梅赛德斯-奔驰 | Mercedes-Benz | 针对中国的法案可能阻止梅赛德斯-奔驰进入美国市场**
-
-💡 高管洞察：美国拟立法限制中国关联企业，可能阻断奔驰美国市场准入。建议立即评估供应链中中国成分比例，启动合规审查，并准备替代市场或本地化方案以降低出口中断风险。
-
-📅 2026-05-30 | 📰 信息源聚合：MSN
+📅 2026-06-02 | 📰 信息源聚合：[金融界](https://news.google.com/rss/articles/CBMib0FVX3lxTE1SLWlEeVFQeW9Pb3BiVGpSbWkwcjhDbUIyc0pwOWk5aUk1anp5SWYtT3M5MjNrYWQxS0duSFRDOTVjVFFWTEV6X2NzLTFIY2NmaGdrS0tDdjdWUF81RzNVRjdPUEdvNENVQjFhZTI3TQ?oc=5), [CNBC](https://news.google.com/rss/articles/CBMingFBVV95cUxNR0ZGeFQxNVhvbXZlLThWZ0pzMEtmamE5cUdPbFFDSGUwWGZuTkM4aFN2ejdYWnFYZ190RXY5MG8telROdnMwVWpKS1JMZVZHVW1HWXNrdmhsOEstR0xyWHRMRDdGQW05d0NSZl93ZkpXR2taUl9FOGhWWllyWmU2TmVjV0hWT1VqYlNYVDZaMDkxc0FNNS1LQ2s4NHcwZ9IBowFBVV95cUxQeVZSaldUX0d2aDNEZ2dueWdHM3ZpZkpYOTlUMzR1dWxINUFyVEFSeTd2MExEVk1SOFFHWjFfekZDMHltanJqVlRuWVVBVWtDUU5SSTVSdVM1aVVIU2dRblN0YXZrUXlSUEdFM09ydDhkdGNZUmNPbldNMElLWDZLbnpLc1ZaOE5LM0dCU1JFMHFnUjE2WVhUS0M2SF9NYnhURTZN?oc=5), [WSJ](https://news.google.com/rss/articles/CBMiogFBVV95cUxPSW13OU1jb1pGMUgwZDJSVkJkbG5MZnA3OEpZVUZfaUs2NTYtb3Y4MWo5QTI2by1hY2llT1lzalkwWnBGcW9rUzBuQVAyX3pCQnNmS2ZOVElONmR4QVN5bGpCck1hTzlJRGU4RGtBbjU5MEhlT1Ywb255WGdrUlI4WXVjazFoVXZkaUZ2ZFBNcDlsTzdTNUlBak5KNjNjMHp6VXc?oc=5)
 
 ---
 
 ## 【合规与运营危机】
 > 劳工罢工、重大安全事故、产品召回、严重环保罚单引发的即期运营阻断
 
-**宝马 | BMW | 宝马发动机起火导致韩国禁售**
+**宁德时代 | CATL | 宁德时代德布勒森电池工厂泄漏含毒化学物质**
 
-💡 高管洞察：宝马韩国市场因发动机起火被禁售，触发韩国《汽车管理法》召回程序。建议立即穿透排查该型号所涉上游供应商质量体系，梳理在韩库存及替代市场分流方案，避免因连锁禁售导致欧洲及北美市场监管跟进。
+💡 高管洞察：宁德时代匈牙利德布勒森工厂发生化学物质泄漏，含有可致胎儿损伤的溶剂。该事件属于环保安全事故，可能引发当地监管审查和停产风险。华友钴业作为上游材料供应商，需关注该工厂是否涉及前驱体或正极材料供应，若停产将影响华友对宁德时代的出货。
 
-📅 2026-05-23 | 📰 信息源聚合：Bangkok Post
-
----
-
-**梅赛德斯-奔驰 | Mercedes-Benz | 梅赛德斯-奔驰GLS 450爆炸**
-
-💡 高管洞察：车辆起火爆炸，属重大安全事故。建议立即启动全球召回调查，排查同型号电池或燃油系统缺陷，并加强供应商质量审核，防止类似事件影响品牌信任及监管处罚。
-
-📅 2026-05-26 | 📰 信息源聚合：AOL.com
-
----
-
-**特斯拉 | 特斯拉瑞典罢工规模缩减，IF Metall要求机械师复工**
-
-💡 高管洞察：瑞典罢工虽规模缩减，但IF Metall工会仍维持封锁。需评估该事件对北欧其他市场的示范效应，提前与当地劳资委员会建立沟通管道，防止罢工潮蔓延至德国超级工厂。
-
-📅 2026-05-29 | 📰 信息源聚合：eletric-vehicles.com, Automotive World, Moomoo
-
----
-
-**特斯拉 | IF Metall部分缩减在瑞典针对特斯拉的罢工行动**
-
-💡 高管洞察：瑞典工会缩减罢工规模，但劳资冲突未完全解决。需评估北欧其他市场示范效应，提前与当地劳资委员会沟通，防止罢工潮蔓延至德国超级工厂。
-
-📅 2026-05-29 | 📰 信息源聚合：富途牛牛, Bloomberg.com, Automotive News
-
----
-
-**通用汽车 | 通用汽车将撤出葡萄牙**
-
-💡 高管洞察：撤出葡萄牙市场，可能影响当地供应链，但非物理停摆或劳资冲突。需评估对欧洲其他市场的影响。
-
-📅 2026-05-30 | 📰 信息源聚合：Portugal Resident
-
----
-
-**通用汽车 | 制造瑕疵引发安全隐患，通用汽车北美召回近7000辆问题车**
-
-💡 高管洞察：产品召回属于合规与运营危机，需排查供应商质量体系，避免连锁反应。
-
-📅 2026-05-29 | 📰 信息源聚合：汽车之家
-
----
-
-## 【机构与声誉预警】
-> NGO指控、人权机构质询、评级下调等尚未演变为实质停产的高声誉风险事件
-
-**青山控股 | 青山控股未回应商业与人权中心质询**
-
-💡 高管洞察：未回应人权质询可能引发声誉风险，需关注后续发展，避免因人权指控导致市场准入障碍。
-
-📅 2026-05-27 | 📰 信息源聚合：Business and Human Rights Centre
+📅 2026-06-01 | 📰 信息源聚合：[xindb.com](https://news.google.com/rss/articles/CBMihAFBVV95cUxQZTRpbXhULUtkWUI0MmctenFaOUxrSmhDVVlIb1VXSmE5Xy1FTk9WTTF1M3drajdYY1RNV2JYbXgxaENEQTdoUjNNY3hISVhrNzV2Vk96S1RBaC1TcW9reEY5V2dtR3RlakdUeGFZdGNPcWp4dnY0eWNiWHdOU1NZMHRkUkw?oc=5)
 
 ---
 
 ---
 
-🤖 *本报告由 ESG Intelligence Agent 驱动，严格遵循「LLM JSON 提取 → Python 确定性降噪 → 模板渲染」三级清洗管线。*
-⚠️  *数据来源为公开 RSS 新闻源，仅供决策参考，不构成投资或法律建议。*
+🤖 *本报告由 ESG Intelligence Agent 自动生成，数据来源于公开新闻源。*
+⚠️  *仅供决策参考，不构成投资或法律建议。*

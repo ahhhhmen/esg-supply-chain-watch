@@ -37,6 +37,7 @@ from typing import Optional
 from urllib.parse import quote, unquote, parse_qs, urlparse
 
 import pandas as pd
+import feedparser
 import requests
 import yaml
 from bs4 import BeautifulSoup
@@ -67,6 +68,35 @@ FETCH_HEADERS = {
         "Chrome/120.0.0.0 Safari/537.36"
     )
 }
+
+# ── 钉钉系统报警 Webhook ────────────────────────────────
+# 填写真实 Webhook URL 后生效，为空时仅在控制台打印 ERROR 日志
+DINGTALK_WEBHOOK_URL = ""
+
+# ─────────────────────────────────────────────────────────
+# 垂直 RSS 种子配置（双轨数据源注入系统）
+# ─────────────────────────────────────────────────────────
+
+VERTICAL_RSS_FEEDS = [
+    {"url": "https://www.mining.com/tag/battery-metals/feed/", "lang": "英语", "default_tag": "电池金属/全球"},
+    {"url": "https://www.mining-journal.com/rss", "lang": "英语", "default_tag": "矿业综合/全球"},
+    {"url": "https://www.dunia-energi.com/feed/", "lang": "印尼语", "default_tag": "能矿政策/印尼"},
+    {"url": "https://www.tambang.co.id/feed/", "lang": "印尼语", "default_tag": "矿业动态/印尼"},
+    {"url": "https://www.zhitongcaijing.com/rss/hangye/yousejinshu.xml", "lang": "中文", "default_tag": "有色金属/中资出海"},
+    {"url": "https://fr.zonebourse.com/flux/rss/Matieres-Premieres/", "lang": "法语", "default_tag": "大宗商品/法语圈"},
+    {"url": "https://www.mch.cl/feed/", "lang": "西班牙语", "default_tag": "锂矿/拉美"},
+    {"url": "https://www.mindanews.com/feed/", "lang": "菲律宾语", "default_tag": "镍矿/菲律宾"},
+]
+
+# 供应链核心关键词白名单 — 仅标题包含至少一个关键词的垂直 RSS 文章才会被保留
+_VERTICAL_KEYWORD_WHITELIST = re.compile(
+    r"镍|钴|锂|n[íi]quel|cobalt|l[íi]tio|lithium|"
+    r"bater[íi]i?[ae]?|battery|tambang|miner[áa]|mineral|"
+    r"eramet|catl|tesla|hua[ -]?you|华友|"
+    r"lg energy|samsung sdi|panasonic energy|"
+    r"sk on|northvolt|前驱体|precursor|cathode|正极",
+    re.IGNORECASE,
+)
 
 
 # ─────────────────────────────────────────────────────────
@@ -753,6 +783,87 @@ class ESGIntelligenceAgent:
     DEEPSEEK_BASE_URL = "https://api.deepseek.com"
     DEEPSEEK_MODEL    = "deepseek-chat"
 
+    # ── 垂直 RSS 抓取（双轨数据源注入） ─────────────────────
+
+    @staticmethod
+    def _fetch_vertical_rss_news() -> list[dict]:
+        """遍历 VERTICAL_RSS_FEEDS，使用 feedparser 抓取垂直矿业网站最新文章。
+
+        安全策略：
+        1. 使用 feedparser 解析 XML/RSS，自动处理 ATOM 与 RSS 2.0 差异。
+        2. 逐 feed 抓取，单 feed 失败不影响其他源。
+        3. 关键词白名单过滤：标题不含任何 _VERTICAL_KEYWORD_WHITELIST 模式的直接丢弃。
+        4. 输出标准化 dict，字段对齐 Google News 抓取器输出的字段名：
+           title / link -> url / published -> date / source / description / original_language
+        """
+        results: list[dict] = []
+        for feed_cfg in VERTICAL_RSS_FEEDS:
+            feed_url = feed_cfg["url"]
+            feed_lang = feed_cfg["lang"]
+            default_tag = feed_cfg["default_tag"]
+            logger.info(f"[垂直RSS] 抓取: {feed_lang} | {feed_url[:70]}...")
+            try:
+                parsed = feedparser.parse(feed_url)
+                entries = parsed.entries
+                logger.info(f"[垂直RSS] {feed_lang} 返回 {len(entries)} 条条目")
+                for entry in entries:
+                    title = getattr(entry, "title", "").strip()
+                    link = getattr(entry, "link", "").strip()
+
+                    if not title or not link:
+                        continue
+
+                    # 关键词白名单过滤 — 标题不包含任何供应链关键词则丢弃
+                    if not _VERTICAL_KEYWORD_WHITELIST.search(title):
+                        logger.debug(f"[垂直RSS 过滤] 标题不含关键词: {title[:60]}")
+                        continue
+
+                    # 日期解析：兼容 published / updated / published_parsed
+                    date_str = ""
+                    if hasattr(entry, "published"):
+                        date_str = entry.published
+                    elif hasattr(entry, "updated"):
+                        date_str = entry.updated
+                    else:
+                        from time import strftime, gmtime
+                        if hasattr(entry, "published_parsed") and entry.published_parsed:
+                            date_str = strftime("%a, %d %b %Y %H:%M:%S +0000", entry.published_parsed)
+                        elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+                            date_str = strftime("%a, %d %b %Y %H:%M:%S +0000", entry.updated_parsed)
+                        else:
+                            date_str = strftime("%a, %d %b %Y %H:%M:%S +0000", gmtime())
+
+                    # 来源名：优先 feed.title，回退到域名
+                    source_name = ""
+                    if hasattr(parsed, "feed") and hasattr(parsed.feed, "title"):
+                        source_name = parsed.feed.title.strip()
+                    if not source_name:
+                        source_name = default_tag
+
+                    # 摘要/描述
+                    description = ""
+                    if hasattr(entry, "summary"):
+                        description = entry.summary
+                    elif hasattr(entry, "description"):
+                        description = entry.description
+                    description = strip_html(str(description))
+
+                    results.append({
+                        "title": title,
+                        "url": link,
+                        "date": date_str,
+                        "source": source_name,
+                        "description": description,
+                        "original_language": feed_lang,
+                        "default_tag": default_tag,
+                    })
+            except Exception as exc:
+                logger.warning(f"[垂直RSS] 抓取失败 {feed_cfg['lang']}: {exc}")
+                continue
+
+        logger.info(f"[垂直RSS] 汇总: {len(results)} 篇关键词命中文章（共 {len(VERTICAL_RSS_FEEDS)} 个种子）")
+        return results
+
     @classmethod
     def _build_system_prompt(cls, company_names: list[str], mode: str) -> str:
         """构建 DeepSeek System Prompt - v11 华友钴业中心制。"""
@@ -772,7 +883,7 @@ class ESGIntelligenceAgent:
    阅读所有新闻，将描述【同一核心事件】的多条新闻强制合并为一个独立事件。判断标准：
    - 同一企业在同一时间发生的同一类事件（如"特斯拉瑞典罢工""宝马韩国起火"）不论有多少家媒体以不同标题报道，都必须合并为一条 event。
    - 合并后的 event 必须聚合所有相关来源的媒体名称和对应 URL，放入 sources 数组。
-   - 聚合后，只能保留一条最优的 core_event_title（选用最简洁准确的那个标题）。
+   - 聚合后，必须产出一条最优的 core_event_title_en（标准英文摘要，用于去重）和一条精炼的 display_title_zh（中文标题，用于高管阅读）。
    - 严禁将同一事件的多个媒体报道拆分为多条独立 event。
 
 2. 降噪判定 (is_valid_risk)：
@@ -820,13 +931,18 @@ class ESGIntelligenceAgent:
    - 海外项目准入合规：目标市场（欧盟、北美、东南亚）的监管政策变化是否会影响华友海外项目的环评审批、出口许可或供应链合规认证（如 CSRD/CSDDD/EU Battery Regulation）。
 4. 字数红线：50-80 汉字或英文单词，低于 50 或超过 80 视为违规。
 5. 禁止废话：严禁使用"可能影响运营""面临声誉风险""需持续关注""建议华友"等空洞套话。必须指明具体的传导环节和波及路径。
-6. 正例（合规）：
+6. Tone Constraint (语气约束)：请始终以兼具严谨逻辑与务实精神的资深专业顾问身份撰写洞察。保持绝对的【客观、中立、克制】底色。严禁滥用耸动词汇（如'突发'、'震惊'、'致命'、'严重威胁'）。除非有确凿证据表明工厂在物理层面上【今天已经停产】，否则只做中性的事实陈述与逻辑推演。坚决避免'狼来了'效应。
+7. 正例（合规）：
    - "宝马韩国市场因发动机起火被禁售，触发韩国《汽车管理法》召回程序。华友作为宝马电池材料上游供应商，需关注该车型所涉电池型号是否与华友正极材料供应体系存在关联，韩国市场禁售可能导致该车型减产，间接影响华友对韩系电池厂的正极材料出货排期。"
    - "特斯拉瑞典维修工人罢工规模虽缩减，但 IF Metall 工会仍维持封锁。北欧市场劳资冲突的持续发酵可能加速主机厂对供应链人权合规的审查力度，华友在印尼镍矿项目的劳工标准及出海合规文档将面临更严苛的欧盟 CSDDD 穿透审计。"
-7. 反例（违规，绝不可输出）：
+8. 反例（违规，绝不可输出）：
    - "可能影响运营" — 空洞无物，违反规则5。
    - "面临声誉风险" — 未说明传导链条，违反规则2。
    - "建议华友加强合规管理" — 包含行为建议，违反规则2（华友视角只推演传导，不给出建议）。
+9. 【判例法 — 地缘政治因果传导铁律】绝对红线：
+   · 如果美国国会/政府因"中国资本持股/中国供应链关联"而对欧洲车企（如梅赛德斯-奔驰、宝马等）发起审查或限制销售，其物理传导链条为："限制其在【美国本土】的销售，进而可能导致其全球电动车减产或迫使其供应链'去中国化'，从而间接冲击上游材料商（华友）的订单"。
+   · 严禁直接推演为"影响该车企在华销量（在中国的销量）"。
+   · 严禁因果倒置，必须严格区分【制裁发起国】、【受制裁主体市场】与【上游材料链】的真实传导方向。
 
 # Output Format
 你必须仅输出合法的 JSON 数据，不得包含任何 Markdown 标记或额外解释。JSON 结构必须如下：
@@ -834,7 +950,9 @@ class ESGIntelligenceAgent:
   "events": [
     {{
       "entity": "企业全称（必须精确匹配目标企业列表中某一项）",
-      "core_event_title": "一句话概括合并后的核心事件",
+      "core_event_title_en": "统一转换为标准英文的核心事件简短摘要（5-8个词）。注意：无论原始新闻是印尼语、德语还是中文，此字段必须强制翻译为英文，专门用于 Python 侧的 Jaccard 词级相似度去重。",
+      "display_title_zh": "精炼、专业的纯中文新闻标题，供高管最终阅读。非中文/非英文新闻必须在此字段完成高质量汉化翻译。",
+      "original_language": "识别原始新闻的语种，如 '印尼语', '英语', '德语', '中文'。",
       "executive_insight": "客观事实 + 华友钴业视角传导分析，50-80字",
       "date": "最新日期 YYYY-MM-DD",
       "sources": [{{"name": "媒体A", "url": "https://example.com/articleA"}}, {{"name": "媒体B", "url": "https://example.com/articleB"}}],
@@ -844,7 +962,9 @@ class ESGIntelligenceAgent:
     }},
     {{
       "entity": "亨利·福特医院",
-      "core_event_title": "亨利·福特医院发生罢工",
+      "core_event_title_en": "Henry Ford Hospital workers strike over working conditions",
+      "display_title_zh": "亨利·福特医院发生罢工",
+      "original_language": "英语",
       "executive_insight": "实体错误，非监控目标",
       "date": "2026-05-27",
       "sources": [{{"name": "Jacobin", "url": "https://jacobin.com/example"}}],
@@ -855,7 +975,8 @@ class ESGIntelligenceAgent:
   ]
 }}
 
-重要：is_valid_risk 为 false 的条目也必须输出，以便审计追踪。所有新闻（包括被判定为无效的）都必须在 events 数组中占一条记录，通过 is_valid_risk 字段区分。每条记录都必须包含 is_direct_material_impact 布尔值字段，不可省略。
+重要：每条 event 必须同时包含 core_event_title_en（英文）、display_title_zh（中文）和 original_language（语种）三个字段，缺一不可。核心去重字段为 core_event_title_en，无论原始语种如何都必须翻译为英文。
+is_valid_risk 为 false 的条目也必须输出，以便审计追踪。所有新闻（包括被判定为无效的）都必须在 events 数组中占一条记录，通过 is_valid_risk 字段区分。每条记录都必须包含 is_direct_material_impact 布尔值字段，不可省略。
 sources 字段中的每个元素必须包含 name（媒体名称）和 url（新闻原文直链，优先使用输入数据中提供的已解密 URL）。
 如果没有收到任何新闻，请返回 {{ "events": [] }}。"""
 
@@ -918,14 +1039,15 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 
     @classmethod
     def _merge_same_company_events(cls, events: list[dict]) -> list[dict]:
-        """同公司同质化事件语义合并：将同一企业下高度相似的事件合并为一条，聚合多源信息。
+        """同公司同质化事件语义合并（v12 — 跨语种英文去重）。
 
         在 LLM 跨批次处理时，同一企业的同一事件可能被分散到不同批次中，
         LLM 无法跨批次合并。此函数在 Python 端执行二次合并：
         1. 按 entity（企业名）分组。
-        2. 每组内对 core_event_title 做 Jaccard 词级相似度比对。
-        3. 相似度 >= 阈值的合并为一条，聚合所有 sources 并去重。
-        4. 保留最新的 date 作为合并后日期。
+        2. 每组内对 core_event_title_en（LLM 已规范为英文）做 Jaccard 词级相似度比对。
+           - 由于所有语种的标题已统一翻译为英文，0.45 阈值实现跨语种精准聚合。
+        3. 相似度 >= 阈值的合并为一条，聚合所有 sources（带语种标签）并去重。
+        4. 保留最新的 date 和最优的 display_title_zh 作为合并后字段。
         """
         if not events:
             return []
@@ -949,7 +1071,8 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 if used[i]:
                     continue
                 base = group[i]
-                base_title = str(base.get("core_event_title", "")).strip().lower()
+                # v12: 使用 core_event_title_en 做跨语种去重
+                base_title = str(base.get("core_event_title_en", base.get("core_event_title", ""))).strip().lower()
                 base_tokens = set(cls._WORD_PATTERN.findall(base_title))
 
                 all_sources: list[dict] = []
@@ -972,7 +1095,8 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                     if used[j]:
                         continue
                     other = group[j]
-                    other_title = str(other.get("core_event_title", "")).strip().lower()
+                    # v12: 使用 core_event_title_en 做跨语种去重
+                    other_title = str(other.get("core_event_title_en", other.get("core_event_title", ""))).strip().lower()
                     other_tokens = set(cls._WORD_PATTERN.findall(other_title))
 
                     if not base_tokens or not other_tokens:
@@ -1002,9 +1126,17 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                             f"(相似度={similarity:.2f})"
                         )
 
+                # v12: 保留双标题结构，优先使用 display_title_zh
+                display_zh = str(
+                    base.get("display_title_zh")
+                    or base.get("core_event_title_en")
+                    or base.get("core_event_title", "")
+                ).strip()
                 merged_event: dict = {
                     "entity": base.get("entity", ""),
-                    "core_event_title": base.get("core_event_title", ""),
+                    "core_event_title_en": base.get("core_event_title_en", base.get("core_event_title", "")),
+                    "display_title_zh": display_zh,
+                    "original_language": base.get("original_language", ""),
                     "executive_insight": base.get("executive_insight", ""),
                     "date": max(d for d in all_dates if d) if all_dates else base.get("date", ""),
                     "sources": all_sources,
@@ -1041,11 +1173,13 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             else:
                 valid_events.append(event)
 
-        # 审计日志
+        # 审计日志（v12：优先使用 core_event_title_en）
         for e in invalid_events:
-            logger.info(f"[v10 降噪] 已过滤(无效风险): {e.get('entity', '?')} | {e.get('core_event_title', '?')[:60]}")
+            title_key = e.get("core_event_title_en") or e.get("core_event_title", "?")
+            logger.info(f"[v12 降噪] 已过滤(无效风险): {e.get('entity', '?')} | {str(title_key)[:60]}")
         for e in non_material_events:
-            logger.info(f"[v10 降噪] 已过滤(非材料冲击): {e.get('entity', '?')} | {e.get('core_event_title', '?')[:60]}")
+            title_key = e.get("core_event_title_en") or e.get("core_event_title", "?")
+            logger.info(f"[v12 降噪] 已过滤(非材料冲击): {e.get('entity', '?')} | {str(title_key)[:60]}")
         logger.info(
             f"Python 降噪: {len(invalid_events)} invalid + {len(non_material_events)} non-material -> dropped, "
             f"{len(valid_events)} material-impact -> report"
@@ -1059,6 +1193,24 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 f"语义合并: {pre_merge_count} -> {len(valid_events)} events "
                 f"(移除 {pre_merge_count - len(valid_events)} 条同质化重复)"
             )
+
+        # ── 1.6. 终极 LLM 全局聚合层 (Final Convergence) ──
+        # 解决跨批次 Semantic Drift 导致的假性重复 — 当前 valid_events 通常已 ≤10 条
+        if len(valid_events) > 1:
+            pre_converge = len(valid_events)
+            valid_events = cls._llm_global_convergence(valid_events)
+            if len(valid_events) < pre_converge:
+                logger.info(
+                    f"LLM 全局聚合: {pre_converge} -> {len(valid_events)} events "
+                    f"(合并 {pre_converge - len(valid_events)} 条跨批次重复)"
+                )
+
+        # ── 1.7. 静默阻断：今日无风险事件 ──
+        if not valid_events:
+            logger.info(
+                f"今日分析样本 {len(all_events)} 篇，命中合规红线 0 篇，执行静默阻断。"
+            )
+            return []
 
         # ── 2. 按风险类别分组 ──
         categorized: dict[str, list[dict]] = {
@@ -1091,8 +1243,8 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             title = "🏛️ ESG 全球地缘与合规周报 (Weekly Strategy Insight)"
             first_line = "🔮【宏观合规战略】全球地缘与准入壁垒周报"
         else:
-            title = "📊 ESG 全球供应链动态日报"
-            first_line = "🚨【突发舆情雷达】日常合规与风险速递"
+            title = "🏛️ ESG 全球供应链动态日报 (Daily Intelligence)"
+            first_line = "全球供应链合规与风险速递"
 
         # ── 4. 生成 Markdown 报告 ──
         lines: list[str] = [
@@ -1147,27 +1299,43 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 
             for e in evs:
                 entity = str(e.get("entity", "")).strip()
-                title_text = str(e.get("core_event_title", "")).strip()
+                # v12: 使用汉化后的 display_title_zh 作为主标题
+                title_text = str(
+                    e.get("display_title_zh")
+                    or e.get("core_event_title_en")
+                    or e.get("core_event_title", "")
+                ).strip()
                 insight = str(e.get("executive_insight", "")).strip()
                 date = str(e.get("date", ""))[:10]
-                # 信息源聚合：渲染为 [媒体名](解密URL) 带超链接格式
+                # v12: 信息源聚合，格式 [媒体名 (语种)](解密URL)
                 sources_raw = e.get("sources", [])
+                event_lang = str(e.get("original_language", "")).strip()
                 source_links: list[str] = []
+                seen_source_labels: set[str] = set()
                 if isinstance(sources_raw, list):
                     for s in sources_raw:
                         if isinstance(s, dict):
                             name = str(s.get("name", "")).strip()
                             src_url = str(s.get("url", "")).strip()
+                            # 优先使用 source 级别语种，回退到 event 级别
+                            s_lang = str(s.get("original_language", "")) or event_lang
                             if name:
                                 # 二次解密：LLM 可能回传未解密的 Google News URL
                                 if src_url and "news.google.com" in src_url:
                                     src_url = resolve_news_url(src_url)
+                                # v12: 拼接语种标签，格式 [媒体名 (语种)]
+                                label = f"{name} ({s_lang})" if s_lang else name
+                                if label in seen_source_labels:
+                                    continue
+                                seen_source_labels.add(label)
                                 if src_url and src_url.lower().startswith("http"):
-                                    source_links.append(f"[{name}]({src_url})")
+                                    source_links.append(f"[{label}]({src_url})")
                                 else:
-                                    source_links.append(name)
+                                    source_links.append(label)
                         elif isinstance(s, str) and s.strip():
-                            source_links.append(s.strip())
+                            if s.strip() not in seen_source_labels:
+                                seen_source_labels.add(s.strip())
+                                source_links.append(s.strip())
                 if not source_links:
                     source_links.append("Unknown")
                 sources_str = ", ".join(source_links)
@@ -1192,7 +1360,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         Path(report_path).write_text(report_md, encoding="utf-8")
         logger.info(f"v10 report written: {report_path} ({len(valid_events)} valid / {len(invalid_events)} invalid)")
 
-        # 返回 v9 兼容格式用于 run() 日志统计
+        # 返回 v12 兼容格式用于 run() 日志统计
         compatible: list[dict] = []
         for e in valid_events:
             sources_raw = e.get("sources", [])
@@ -1200,16 +1368,26 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 source_names = []
                 for s in sources_raw:
                     if isinstance(s, dict):
-                        source_names.append(str(s.get("name", "")))
+                        s_name = str(s.get("name", ""))
+                        s_lang = str(s.get("original_language", "")) or str(e.get("original_language", ""))
+                        label = f"{s_name} ({s_lang})" if s_name and s_lang else s_name
+                        if label:
+                            source_names.append(label)
                     elif isinstance(s, str):
                         source_names.append(s)
                 source_str = ", ".join(n for n in source_names if n)
             else:
                 source_str = str(sources_raw) if sources_raw else "Unknown"
             risk_cat = str(e.get("risk_category", "")).strip()
+            # v12: title 使用 display_title_zh
+            title_val = str(
+                e.get("display_title_zh")
+                or e.get("core_event_title_en")
+                or e.get("core_event_title", "")
+            ).strip()
             compatible.append({
                 "company": str(e.get("entity", "")).strip(),
-                "title": str(e.get("core_event_title", "")).strip(),
+                "title": title_val,
                 "insight": str(e.get("executive_insight", "")).strip(),
                 "source": source_str,
                 "date": str(e.get("date", ""))[:10],
@@ -1237,6 +1415,65 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 f"URL: {item.get('url', '')}"
             )
         return "\n\n".join(parts)
+
+    @classmethod
+    def _llm_global_convergence(cls, valid_events: list[dict]) -> list[dict]:
+        """终极 LLM 全局聚合层 — 解决跨批次 Semantic Drift 导致的假性重复。
+
+        当 Python Jaccard 去重后仍有 ≤10 条 valid_events 时，
+        将全部事件一次性喂给 LLM，由其执行语义级别的全局去重合并。
+        输出保持与 valid_events 相同的结构。
+        调用失败时安全回退，返回原始列表。
+        """
+        if not valid_events or len(valid_events) <= 1:
+            return valid_events
+
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            logger.warning("[LLM全局聚合] DEEPSEEK_API_KEY 未设置，跳过全局聚合")
+            return valid_events
+
+        # 构建输入 JSON
+        events_json = json.dumps(valid_events, ensure_ascii=False, indent=2)
+
+        system_msg = """你是一个事件去重引擎。你会收到一组已通过技术降噪的 valid_events。
+你的任务是：将描述同一核心商业/地缘事件的条目彻底合并为一条。
+合并规则：
+1. 合并时提炼出一个最精准、专业的 display_title_zh（中文标题）。
+2. 将所有相关媒体名称和 URL 合并到 sources 数组中，保留 original_language 标签，去重。
+3. 保留最新的 date、最完整的 executive_insight。
+4. 输出格式必须与输入完全一致（数组），不得添加任何额外字段。
+5. 如果输入中没有重复事件，直接返回原数组。
+仅输出合法的 JSON 数组，不要包含任何解释或 Markdown 标记。"""
+
+        try:
+            client = OpenAI(api_key=api_key, base_url=cls.DEEPSEEK_BASE_URL)
+            response = client.chat.completions.create(
+                model=cls.DEEPSEEK_MODEL,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": f"以下是 valid_events JSON 数组:\n{events_json}"},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0,
+                max_tokens=4096,
+            )
+            raw = response.choices[0].message.content or ""
+            # 提取 JSON 数组
+            match = re.search(r"\[.*\]", raw, re.DOTALL)
+            if not match:
+                logger.warning("[LLM全局聚合] 响应中未找到 JSON 数组，回退到原始列表")
+                return valid_events
+            merged = json.loads(match.group(0))
+            if isinstance(merged, list) and len(merged) > 0:
+                logger.info(f"[LLM全局聚合] 成功: {len(valid_events)} -> {len(merged)}")
+                return merged
+            else:
+                logger.warning("[LLM全局聚合] 返回空数组或非数组结构，回退到原始列表")
+                return valid_events
+        except Exception as exc:
+            logger.warning(f"[LLM全局聚合] 调用失败 ({type(exc).__name__}: {exc})，回退到原始列表")
+            return valid_events
 
     def process_intelligence_with_llm(self, raw_data_list: list[dict], mode: str = "daily") -> list[dict]:
         """分批将文章发送至 DeepSeek，收集所有 v10 原始 events 数据。
@@ -1316,6 +1553,33 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         logger.info(f"LLM processing complete: {len(all_events)} total events from {batch_count} batch(es).")
         return all_events
 
+    # ── 系统级报警（钉钉 Webhook） ──────────────────────────
+
+    @staticmethod
+    def _send_system_alert(message: str) -> None:
+        """向预设钉钉 Webhook 发送 FATAL 级系统报警。
+
+        判空保护：若 DINGTALK_WEBHOOK_URL 为空，仅在控制台打印 ERROR 日志。
+        网络异常时静默失败，不影响主流程。
+        """
+        logger.error(f"[SYSTEM_ALERT] {message}")
+        if not DINGTALK_WEBHOOK_URL:
+            return
+        try:
+            payload = {
+                "msgtype": "text",
+                "text": {"content": message},
+            }
+            resp = requests.post(
+                DINGTALK_WEBHOOK_URL,
+                headers={"Content-Type": "application/json"},
+                data=json.dumps(payload),
+                timeout=10,
+            )
+            logger.info(f"[SYSTEM_ALERT] 钉钉报警已发送，响应: {resp.status_code}")
+        except Exception as exc:
+            logger.error(f"[SYSTEM_ALERT] 钉钉报警发送失败: {exc}")
+
     # ── 钉钉推送 ──────────────────────────────────────────
 
     def push_to_dingtalk(self, report_path: str = "esg_global_report.md", mode: str = "daily") -> None:
@@ -1333,8 +1597,8 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 first_line = "🔮【宏观合规战略】全球地缘与准入壁垒周报"
                 ding_title = "🏛️ ESG 全球地缘与合规周报"
             else:
-                first_line = "🚨【突发舆情雷达】日常合规与风险速递"
-                ding_title = "📊 ESG 全球供应链动态日报 (Daily Risk Radar)"
+                first_line = "全球供应链合规与风险速递"
+                ding_title = "🏛️ ESG 全球供应链动态日报 (Daily Intelligence)"
             ding_content = f"# {first_line}\n\n{content}"
             headers = {"Content-Type": "application/json"}
             data = {"msgtype": "markdown", "markdown": {"title": ding_title, "text": ding_content}}
@@ -1355,6 +1619,34 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 
         # ── Phase 1: RSS Fetch ───────────────────────────
         skipped = 0
+
+        # Phase 1a: 垂直矿业 RSS 双轨注入（优先抓取，确保上游矿端信号不遗漏）
+        vertical_articles = self._fetch_vertical_rss_news()
+        vertical_injected = 0
+        for v_raw in vertical_articles:
+            parsed_date = parse_rss_date(v_raw["date"])
+            if parsed_date and parsed_date < self._cutoff:
+                continue
+            if v_raw["url"] in self._seen_urls:
+                continue
+            self._seen_urls.add(v_raw["url"])
+            self.articles.append(NewsArticle(
+                title=v_raw["title"],
+                date=v_raw["date"],
+                source=v_raw["source"],
+                url=v_raw["url"],
+                description=v_raw["description"],
+                company_name_zh="",       # 垂直 RSS 无明确企业归属
+                company_name_en="",
+                track_label=f"垂直矿业RSS ({v_raw.get('original_language', '')})",
+                lang=v_raw.get("original_language", "en-US"),
+                topic_category=v_raw.get("default_tag", "矿业情报"),
+                parsed_date=parsed_date,
+            ))
+            vertical_injected += 1
+        logger.info(f"[垂直RSS] 注入 {vertical_injected} 篇文章（共抓取 {len(vertical_articles)} 篇）")
+
+        # Phase 1b: Google News 关键词轨道抓取
         for idx, q in enumerate(query_tasks, 1):
             logger.info(f"[{idx:>4}/{len(query_tasks)}] [{q.track_label}] {q.url[:80]}...")
             for raw in NewsFetcher.fetch(q.url):
@@ -1377,10 +1669,14 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 ))
             time.sleep(1.2)
 
-        logger.info(f"Phase 1 done. Skipped {skipped} old. Collected {len(self.articles)} articles.")
+        logger.info(f"Phase 1 done. Skipped {skipped} old. Collected {len(self.articles)} articles "
+                     f"(含 {vertical_injected} 篇垂直矿业RSS).")
 
         if not self.articles:
-            MarkdownReportWriter([], self.config, mode=mode).generate(report_path)
+            self._send_system_alert(
+                "🚨 [FATAL级警报] ESG雷达抓取源严重失效触发零数据熔断。"
+                "今日抓取量为0，请立刻排查网络节点或RSS解析器状态！"
+            )
             return
 
         # ── Phase 2: Dedup by title + url (双重去重) ─────

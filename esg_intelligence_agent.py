@@ -1205,6 +1205,25 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                     f"(合并 {pre_converge - len(valid_events)} 条跨批次重复)"
                 )
 
+        # ── 1.65. Google News URL 延迟解包（Lazy Unwrapping） ──
+        # 全局聚合完成后，遍历所有幸存事件的 sources 数组，
+        # 将 Google News 加密链接（news.google.com/rss/articles）还原为真实源站直链。
+        unwrap_count = 0
+        for event in valid_events:
+            sources = event.get("sources")
+            if not isinstance(sources, list):
+                continue
+            for s in sources:
+                if isinstance(s, dict):
+                    src_url = str(s.get("url", "")).strip()
+                    if src_url and "news.google.com/rss/articles" in src_url:
+                        resolved = cls._unwrap_google_news_url(src_url)
+                        if resolved != src_url:
+                            s["url"] = resolved
+                            unwrap_count += 1
+        if unwrap_count:
+            logger.info(f"Google News URL 延迟解包: {unwrap_count} 个加密链接已还原为真实源站直链")
+
         # ── 1.7. 静默阻断：今日无风险事件 ──
         if not valid_events:
             logger.info(
@@ -1415,6 +1434,58 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 f"URL: {item.get('url', '')}"
             )
         return "\n\n".join(parts)
+
+    # ── Google News URL 延迟解包 ──────────────────────────
+
+    _GOOGLE_RSS_ARTICLE_RE = re.compile(r"news\.google\.com/rss/articles")
+
+    @classmethod
+    def _unwrap_google_news_url(cls, url: str) -> str:
+        """将 Google News RSS 加密链接还原为底层真实媒体直链。
+
+        仅处理包含 'news.google.com/rss/articles' 的 URL；
+        使用 requests.head 跟随重定向链，返回最终跳转地址。
+        解析失败或非 Google News 链接时原样返回。
+        """
+        if not url or not cls._GOOGLE_RSS_ARTICLE_RE.search(url):
+            return url
+        try:
+            resp = requests.head(
+                url,
+                headers=FETCH_HEADERS,
+                allow_redirects=True,
+                timeout=5,
+            )
+            final_url = resp.url
+            if (
+                final_url != url
+                and "google.com" not in final_url
+                and final_url.lower().startswith("http")
+            ):
+                logger.debug(f"Google News unwrapped: {url[:60]}... -> {final_url[:80]}...")
+                return final_url
+            else:
+                logger.debug(f"Google News unwrap: no redirect for {url[:60]}...")
+        except Exception as exc:
+            logger.debug(f"Google News unwrap failed [{url[:60]}...]: {exc}")
+        return url
+
+    @classmethod
+    def _unwrap_event_sources(cls, event: dict) -> dict:
+        """对单个 event 的所有 source URL 执行 Google News 延迟解包。
+
+        深度遍历 sources 数组中每个元素的 url 字段，
+        将 Google News 加密链接替换为真实源站直链。
+        """
+        sources = event.get("sources")
+        if not isinstance(sources, list):
+            return event
+        for s in sources:
+            if isinstance(s, dict):
+                src_url = str(s.get("url", "")).strip()
+                if src_url and "news.google.com" in src_url:
+                    s["url"] = cls._unwrap_google_news_url(src_url)
+        return event
 
     @classmethod
     def _llm_global_convergence(cls, valid_events: list[dict]) -> list[dict]:

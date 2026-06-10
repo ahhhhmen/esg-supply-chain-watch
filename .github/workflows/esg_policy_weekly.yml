@@ -26,10 +26,10 @@ jobs:
         cache: 'pip'
 
     # 3. 安装依赖
-    - name: Install Engineering Dependencies
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyyaml requests beautifulsoup4 openai pandas
+        pip install -r requirements.txt
 
     # 4. 执行宏观政策情报检索（--mode weekly，火力全开）
     - name: Execute ESG Intelligence Agent (Weekly)

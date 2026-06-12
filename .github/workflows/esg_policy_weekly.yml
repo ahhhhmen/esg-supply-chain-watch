@@ -3,8 +3,8 @@ name: ESG Policy Weekly Monitor (Weekly)
 # 配置触发时机
 on:
   schedule:
-    # 每周五 UTC 时间 23:00 自动运行（对应北京时间周六早上 07:00）
-    - cron: '0 23 * * 5'
+    # 07:00 UTC 等于北京时间 15:00，5 代表星期五
+    - cron: '0 7 * * 5'
   workflow_dispatch:
     # 允许在 GitHub 网页端手动点击运行按钮
 

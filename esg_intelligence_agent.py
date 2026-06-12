@@ -37,11 +37,12 @@ from typing import Optional
 from urllib.parse import quote, unquote, parse_qs, urlparse
 
 import pandas as pd
-import feedparser
 import requests
 import yaml
 from bs4 import BeautifulSoup
 from openai import OpenAI
+
+from sourcing_engine import SourcingEngine
 
 # ─────────────────────────────────────────────────────────
 # 日志
@@ -72,31 +73,6 @@ FETCH_HEADERS = {
 # ── 钉钉系统报警 Webhook ────────────────────────────────
 # 填写真实 Webhook URL 后生效，为空时仅在控制台打印 ERROR 日志
 DINGTALK_WEBHOOK_URL = ""
-
-# ─────────────────────────────────────────────────────────
-# 垂直 RSS 种子配置（双轨数据源注入系统）
-# ─────────────────────────────────────────────────────────
-
-VERTICAL_RSS_FEEDS = [
-    {"url": "https://www.mining.com/tag/battery-metals/feed/", "lang": "英语", "default_tag": "电池金属/全球"},
-    {"url": "https://www.mining-journal.com/rss", "lang": "英语", "default_tag": "矿业综合/全球"},
-    {"url": "https://www.dunia-energi.com/feed/", "lang": "印尼语", "default_tag": "能矿政策/印尼"},
-    {"url": "https://www.tambang.co.id/feed/", "lang": "印尼语", "default_tag": "矿业动态/印尼"},
-    {"url": "https://www.zhitongcaijing.com/rss/hangye/yousejinshu.xml", "lang": "中文", "default_tag": "有色金属/中资出海"},
-    {"url": "https://fr.zonebourse.com/flux/rss/Matieres-Premieres/", "lang": "法语", "default_tag": "大宗商品/法语圈"},
-    {"url": "https://www.mch.cl/feed/", "lang": "西班牙语", "default_tag": "锂矿/拉美"},
-    {"url": "https://www.mindanews.com/feed/", "lang": "菲律宾语", "default_tag": "镍矿/菲律宾"},
-]
-
-# 供应链核心关键词白名单 — 仅标题包含至少一个关键词的垂直 RSS 文章才会被保留
-_VERTICAL_KEYWORD_WHITELIST = re.compile(
-    r"镍|钴|锂|n[íi]quel|cobalt|l[íi]tio|lithium|"
-    r"bater[íi]i?[ae]?|battery|tambang|miner[áa]|mineral|"
-    r"eramet|catl|tesla|hua[ -]?you|华友|"
-    r"lg energy|samsung sdi|panasonic energy|"
-    r"sk on|northvolt|前驱体|precursor|cathode|正极",
-    re.IGNORECASE,
-)
 
 
 # ─────────────────────────────────────────────────────────
@@ -782,87 +758,6 @@ class ESGIntelligenceAgent:
 
     DEEPSEEK_BASE_URL = "https://api.deepseek.com"
     DEEPSEEK_MODEL    = "deepseek-chat"
-
-    # ── 垂直 RSS 抓取（双轨数据源注入） ─────────────────────
-
-    @staticmethod
-    def _fetch_vertical_rss_news() -> list[dict]:
-        """遍历 VERTICAL_RSS_FEEDS，使用 feedparser 抓取垂直矿业网站最新文章。
-
-        安全策略：
-        1. 使用 feedparser 解析 XML/RSS，自动处理 ATOM 与 RSS 2.0 差异。
-        2. 逐 feed 抓取，单 feed 失败不影响其他源。
-        3. 关键词白名单过滤：标题不含任何 _VERTICAL_KEYWORD_WHITELIST 模式的直接丢弃。
-        4. 输出标准化 dict，字段对齐 Google News 抓取器输出的字段名：
-           title / link -> url / published -> date / source / description / original_language
-        """
-        results: list[dict] = []
-        for feed_cfg in VERTICAL_RSS_FEEDS:
-            feed_url = feed_cfg["url"]
-            feed_lang = feed_cfg["lang"]
-            default_tag = feed_cfg["default_tag"]
-            logger.info(f"[垂直RSS] 抓取: {feed_lang} | {feed_url[:70]}...")
-            try:
-                parsed = feedparser.parse(feed_url)
-                entries = parsed.entries
-                logger.info(f"[垂直RSS] {feed_lang} 返回 {len(entries)} 条条目")
-                for entry in entries:
-                    title = getattr(entry, "title", "").strip()
-                    link = getattr(entry, "link", "").strip()
-
-                    if not title or not link:
-                        continue
-
-                    # 关键词白名单过滤 — 标题不包含任何供应链关键词则丢弃
-                    if not _VERTICAL_KEYWORD_WHITELIST.search(title):
-                        logger.debug(f"[垂直RSS 过滤] 标题不含关键词: {title[:60]}")
-                        continue
-
-                    # 日期解析：兼容 published / updated / published_parsed
-                    date_str = ""
-                    if hasattr(entry, "published"):
-                        date_str = entry.published
-                    elif hasattr(entry, "updated"):
-                        date_str = entry.updated
-                    else:
-                        from time import strftime, gmtime
-                        if hasattr(entry, "published_parsed") and entry.published_parsed:
-                            date_str = strftime("%a, %d %b %Y %H:%M:%S +0000", entry.published_parsed)
-                        elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
-                            date_str = strftime("%a, %d %b %Y %H:%M:%S +0000", entry.updated_parsed)
-                        else:
-                            date_str = strftime("%a, %d %b %Y %H:%M:%S +0000", gmtime())
-
-                    # 来源名：优先 feed.title，回退到域名
-                    source_name = ""
-                    if hasattr(parsed, "feed") and hasattr(parsed.feed, "title"):
-                        source_name = parsed.feed.title.strip()
-                    if not source_name:
-                        source_name = default_tag
-
-                    # 摘要/描述
-                    description = ""
-                    if hasattr(entry, "summary"):
-                        description = entry.summary
-                    elif hasattr(entry, "description"):
-                        description = entry.description
-                    description = strip_html(str(description))
-
-                    results.append({
-                        "title": title,
-                        "url": link,
-                        "date": date_str,
-                        "source": source_name,
-                        "description": description,
-                        "original_language": feed_lang,
-                        "default_tag": default_tag,
-                    })
-            except Exception as exc:
-                logger.warning(f"[垂直RSS] 抓取失败 {feed_cfg['lang']}: {exc}")
-                continue
-
-        logger.info(f"[垂直RSS] 汇总: {len(results)} 篇关键词命中文章（共 {len(VERTICAL_RSS_FEEDS)} 个种子）")
-        return results
 
     @classmethod
     def _build_system_prompt(cls, company_names: list[str], mode: str) -> str:
@@ -1693,60 +1588,31 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         query_tasks = self.config.build_query_tasks(mode)
         logger.info(f"Query tasks: {len(query_tasks)} (mode={mode})")
 
-        # ── Phase 1: RSS Fetch ───────────────────────────
-        skipped = 0
+        # ── Phase 1: Sourcing Engine 统一供料 ─────────────
+        engine = SourcingEngine()
+        raw_items = engine.fetch_all_active_sources()
+        for item in raw_items:
+            pub_date_str = item.get("pub_date", "")
+            parsed_date = None
+            try:
+                parsed_date = datetime.fromisoformat(pub_date_str)
+            except (ValueError, TypeError):
+                pass
 
-        # Phase 1a: 垂直矿业 RSS 双轨注入（优先抓取，确保上游矿端信号不遗漏）
-        vertical_articles = self._fetch_vertical_rss_news()
-        vertical_injected = 0
-        for v_raw in vertical_articles:
-            parsed_date = parse_rss_date(v_raw["date"])
-            if parsed_date and parsed_date < self._cutoff:
-                continue
-            if v_raw["url"] in self._seen_urls:
-                continue
-            self._seen_urls.add(v_raw["url"])
             self.articles.append(NewsArticle(
-                title=v_raw["title"],
-                date=v_raw["date"],
-                source=v_raw["source"],
-                url=v_raw["url"],
-                description=v_raw["description"],
-                company_name_zh="",       # 垂直 RSS 无明确企业归属
+                title=str(item.get("title", "")),
+                date=pub_date_str,
+                source=str(item.get("source_id", "SourcingEngine")),
+                url=str(item.get("link", "")),
+                description=str(item.get("content", ""))[:300],
+                company_name_zh="",   # 供料引擎未绑定企业归属，由下游 LLM 识别
                 company_name_en="",
-                track_label=f"垂直矿业RSS ({v_raw.get('original_language', '')})",
-                lang=v_raw.get("original_language", "en-US"),
-                topic_category=v_raw.get("default_tag", "矿业情报"),
+                track_label=f"供料矩阵 ({item.get('source_id', '')})",
+                lang="auto",
+                topic_category="多源情报",
                 parsed_date=parsed_date,
             ))
-            vertical_injected += 1
-        logger.info(f"[垂直RSS] 注入 {vertical_injected} 篇文章（共抓取 {len(vertical_articles)} 篇）")
-
-        # Phase 1b: Google News 关键词轨道抓取
-        for idx, q in enumerate(query_tasks, 1):
-            logger.info(f"[{idx:>4}/{len(query_tasks)}] [{q.track_label}] {q.url[:80]}...")
-            for raw in NewsFetcher.fetch(q.url):
-                parsed_date = parse_rss_date(raw["date"])
-                if parsed_date and parsed_date < self._cutoff:
-                    skipped += 1
-                    continue
-                if raw["url"] in self._seen_urls:
-                    continue
-                self._seen_urls.add(raw["url"])
-                self.articles.append(NewsArticle(
-                    title=raw["title"], date=raw["date"],
-                    source=raw["source"], url=raw["url"],
-                    description=raw["description"],
-                    company_name_zh=q.company_name_zh,
-                    company_name_en=q.company_name_en,
-                    track_label=q.track_label, lang=q.lang,
-                    topic_category=q.topic_category,
-                    parsed_date=parsed_date,
-                ))
-            time.sleep(1.2)
-
-        logger.info(f"Phase 1 done. Skipped {skipped} old. Collected {len(self.articles)} articles "
-                     f"(含 {vertical_injected} 篇垂直矿业RSS).")
+        logger.info(f"Phase 1: Sourcing Engine 返回了 {len(self.articles)} 条有效纯净数据。")
 
         if not self.articles:
             self._send_system_alert(

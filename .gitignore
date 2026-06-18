@@ -28,6 +28,9 @@ node_modules/
 # LangGraph
 .langgraph/
 
+# Environment variables (API keys, secrets)
+.env
+
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml

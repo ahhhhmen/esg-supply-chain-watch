@@ -2,6 +2,9 @@ from pymongo import MongoClient
 from datetime import datetime
 from typing import Dict, Any, Optional
 import certifi
+import logging
+
+logger = logging.getLogger(__name__)
 
 class MongoDBService:
     def __init__(self, uri: str):
@@ -15,6 +18,7 @@ class MongoDBService:
         self.db = self.client.get_database('tavily_research')
         self.jobs = self.db.jobs
         self.reports = self.db.reports
+        logger.info("MongoDB service initialized (database: tavily_research)")
 
     def create_job(self, job_id: str, inputs: Dict[str, Any]) -> None:
         """Create a new research job record."""
@@ -25,6 +29,7 @@ class MongoDBService:
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         })
+        logger.info(f"MongoDB: created job {job_id}")
 
     def update_job(self, job_id: str, 
                   status: str = None,
@@ -43,6 +48,7 @@ class MongoDBService:
             {"job_id": job_id},
             {"$set": update_data}
         )
+        logger.info(f"MongoDB: updated job {job_id} (status={status})")
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a job by ID."""
@@ -58,6 +64,7 @@ class MongoDBService:
             "analyst_queries": report_data.get("analyst_queries", {}),
             "created_at": datetime.utcnow()
         })
+        logger.info(f"MongoDB: stored report for job {job_id}")
 
     def get_report(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a report by job ID."""

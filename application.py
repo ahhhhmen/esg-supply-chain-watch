@@ -7,9 +7,13 @@ env_path = Path(__file__).parent / '.env'
 if env_path.exists():
     load_dotenv(dotenv_path=env_path, override=True)
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel
 from backend.graph import Graph
 from backend.services.websocket_manager import WebSocketManager
@@ -23,20 +27,62 @@ from backend.services.mongodb import MongoDBService
 from backend.services.pdf_service import PDFService
 
 # Configure logging
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-console_handler = logging.StreamHandler()
-logger.addHandler(console_handler)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Tavily Company Research API")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+# ── Security Headers Middleware ──────────────────────────────────────
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Adds standard security headers to every response."""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# ── API Key Authentication Middleware ─────────────────────────────────
+API_KEY = os.getenv("API_KEY", "").strip()
+EXEMPT_PATHS = {"/", "/docs", "/openapi.json", "/redoc"}
+
+@app.middleware("http")
+async def api_key_middleware(request: Request, call_next):
+    # Skip auth if no API_KEY configured (backward compatible)
+    if not API_KEY:
+        return await call_next(request)
+    # Exempt health check, preflight, and docs
+    if request.url.path in EXEMPT_PATHS or request.method == "OPTIONS":
+        return await call_next(request)
+    # Allow research routes only with valid API key
+    provided_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+    if provided_key != API_KEY:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid or missing API key. Pass via X-API-Key header or ?api_key= query parameter."},
+        )
+    return await call_next(request)
+
+# ── Rate Limiting ────────────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 manager = WebSocketManager()
 pdf_service = PDFService({"pdf_output_dir": "pdfs"})
@@ -75,14 +121,11 @@ class GeneratePDFRequest(BaseModel):
 
 @app.options("/research")
 async def preflight():
-    response = JSONResponse(content=None, status_code=200)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    return response
+    return JSONResponse(content=None, status_code=200)
 
 @app.post("/research")
-async def research(data: ResearchRequest):
+@limiter.limit("5/hour")
+async def research(data: ResearchRequest, request: Request):
     try:
         logger.info(f"Received research request for {data.company}")
         job_id = str(uuid.uuid4())
@@ -94,9 +137,6 @@ async def research(data: ResearchRequest):
             "message": "Research started. Connect to WebSocket for updates.",
             "websocket_url": f"/research/ws/{job_id}"
         })
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         return response
 
     except Exception as e:
@@ -164,6 +204,11 @@ async def process_research(job_id: str, data: ResearchRequest):
 
     except Exception as e:
         logger.error(f"Research failed: {str(e)}")
+        job_status[job_id].update({
+            "status": "failed",
+            "error": str(e),
+            "last_update": datetime.now().isoformat()
+        })
         await manager.send_status_update(
             job_id=job_id,
             status="failed",
@@ -178,13 +223,23 @@ async def ping():
 
 @app.get("/research/pdf/{filename}")
 async def get_pdf(filename: str):
-    pdf_path = os.path.join("pdfs", filename)
-    if not os.path.exists(pdf_path):
+    # Prevent path traversal attacks by resolving and validating the path
+    pdfs_dir = Path("pdfs").resolve()
+    pdf_path = (pdfs_dir / filename).resolve()
+    if not str(pdf_path).startswith(str(pdfs_dir)):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not pdf_path.exists():
         raise HTTPException(status_code=404, detail="PDF not found")
     return FileResponse(pdf_path, media_type='application/pdf', filename=filename)
 
 @app.websocket("/research/ws/{job_id}")
 async def websocket_endpoint(websocket: WebSocket, job_id: str):
+    # Validate API key from query params (WebSocket can't use custom headers)
+    if API_KEY:
+        provided_key = websocket.query_params.get("api_key")
+        if provided_key != API_KEY:
+            await websocket.close(code=4001, reason="Invalid or missing API key")
+            return
     try:
         await websocket.accept()
         await manager.connect(websocket, job_id)
@@ -218,6 +273,17 @@ async def get_research(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Research job not found")
     return job
+
+@app.get("/research/status/{job_id}")
+async def get_research_status(job_id: str):
+    """Lightweight status check that works without MongoDB, used by frontend polling fallback."""
+    if job_id in job_status:
+        status_data = job_status[job_id]
+        return {
+            "status": status_data["status"],
+            "result": {"report": status_data.get("report")} if status_data.get("report") else None,
+        }
+    raise HTTPException(status_code=404, detail="Research job not found")
 
 @app.get("/research/{job_id}/report")
 async def get_research_report(job_id: str):

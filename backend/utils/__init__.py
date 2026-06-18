@@ -1,12 +1,4 @@
-from .utils import generate_pdf_from_md, clean_text
-from .references import (
-    extract_domain_name, 
-    extract_title_from_url_path, 
-    clean_title, 
-    normalize_url,
-    extract_website_name_from_domain,
-    process_references_from_search_results,
-    format_reference_for_markdown,
-    extract_link_info,
-    format_references_section
-) 
+# Heavy imports are moved to direct sub-module imports by consumers:
+#   from backend.utils.references import clean_title, normalize_url, ...
+#   from backend.utils.utils import generate_pdf_from_md, clean_text
+# This keeps the package lightweight for tools that only need references.py. 

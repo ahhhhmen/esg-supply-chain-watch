@@ -4,6 +4,9 @@ import os
 from tavily import AsyncTavilyClient
 import asyncio
 from ..classes import ResearchState
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Enricher:
     """Enriches curated documents with raw content."""
@@ -46,7 +49,7 @@ class Enricher:
                     )
                 return {url: result['results'][0].get('raw_content', '')}
         except Exception as e:
-            print(f"Error fetching raw content for {url}: {e}")
+            logger.error(f"Error fetching raw content for {url}: {e}")
             error_msg = str(e)
             if websocket_manager and job_id:
                 await websocket_manager.send_status_update(
@@ -228,7 +231,7 @@ class Enricher:
                     }
                 except Exception as e:
                     # Log the error but don't fail the entire process
-                    print(f"Error processing category {task['category']}: {e}")
+                    logger.error(f"Error processing category {task['category']}: {e}")
                     return {
                         'category': task['category'],
                         'enriched': 0,
@@ -274,6 +277,6 @@ class Enricher:
             return await self.enrich_data(state)
         except Exception as e:
             # Log the error but don't fail the research process
-            print(f"Error in enrichment process: {e}")
+            logger.error(f"Error in enrichment process: {e}")
             # Return the original state without any enrichment
             return state 

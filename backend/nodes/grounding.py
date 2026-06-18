@@ -2,7 +2,7 @@ from langchain_core.messages import AIMessage
 from tavily import AsyncTavilyClient
 import os
 import logging
-from ..classes import InputState, ResearchState
+from ..classes import ResearchState
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ class GroundingNode:
     def __init__(self) -> None:
         self.tavily_client = AsyncTavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
-    async def initial_search(self, state: InputState) -> ResearchState:
+    async def initial_search(self, state: ResearchState) -> ResearchState:
         # Add debug logging at the start to check websocket manager
         if websocket_manager := state.get('websocket_manager'):
             logger.info("Websocket manager found in state")
@@ -87,7 +87,7 @@ class GroundingNode:
                 error_str = str(e)
                 logger.error(f"Website extraction error: {error_str}", exc_info=True)
                 error_msg = f"⚠️ Error extracting website content: {error_str}"
-                print(error_msg)
+                logger.error(error_msg)
                 msg += f"\n{error_msg}"
                 if websocket_manager := state.get('websocket_manager'):
                     if job_id := state.get('job_id'):
@@ -141,5 +141,5 @@ class GroundingNode:
 
         return research_state
 
-    async def run(self, state: InputState) -> ResearchState:
+    async def run(self, state: ResearchState) -> ResearchState:
         return await self.initial_search(state)

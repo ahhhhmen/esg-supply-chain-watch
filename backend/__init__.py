@@ -27,6 +27,9 @@ if not os.getenv("OPENAI_API_KEY"):
 if not os.getenv("GEMINI_API_KEY"):
     logger.warning("GEMINI_API_KEY environment variable is not set.")
 
-from .graph import Graph
+# Graph is imported lazily by consumers (application.py, langgraph_entry.py)
+# to avoid pulling in heavy dependencies (langchain, tavily, openai) at
+# package-init time, which would break lightweight imports like
+#   from backend.utils.references import clean_title
 
-__all__ = ["Graph"]
+__all__ = []

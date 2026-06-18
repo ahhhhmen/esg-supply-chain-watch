@@ -7,6 +7,7 @@ SourcingEngine — 声明式配置驱动的 ESG 多轨道供料引擎。
 import logging
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import feedparser
@@ -20,7 +21,9 @@ logger = logging.getLogger(__name__)
 class SourcingEngine:
     """加载 esg_sources.yaml，按轨道类型分发抓取，汇总标准化结果。"""
 
-    def __init__(self, config_path: str = "esg_sources.yaml") -> None:
+    def __init__(self, config_path: str = None) -> None:
+        if config_path is None:
+            config_path = str(Path(__file__).parent / "esg_sources.yaml")
         with open(config_path, "r", encoding="utf-8") as fh:
             raw = yaml.safe_load(fh)
 

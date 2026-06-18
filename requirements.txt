@@ -17,3 +17,10 @@ requests
 tavily_python==0.5.1
 uvicorn[standard]==0.34.0
 websockets==12.0
+# Rate limiting
+slowapi
+limits
+# Testing
+pytest>=8.0
+pytest-asyncio>=0.24
+pytest-mock>=3.14

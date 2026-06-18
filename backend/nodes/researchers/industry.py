@@ -1,7 +1,11 @@
 from langchain_core.messages import AIMessage
 from typing import Dict, Any
+import logging
+
 from ...classes import ResearchState
 from .base import BaseResearcher
+
+logger = logging.getLogger(__name__)
 
 class IndustryAnalyzer(BaseResearcher):
     def __init__(self) -> None:
@@ -13,19 +17,23 @@ class IndustryAnalyzer(BaseResearcher):
         industry = state.get('industry', 'Unknown Industry')
         msg = [f"🏭 Industry Analyzer analyzing {company} in {industry}"]
         
-        # Generate search queries using LLM
-        queries = await self.generate_queries(state, """
-        Generate queries on the industry analysis of {company} in the {industry} industry such as:
-        - Market position
-        - Competitors
-        - {industry} industry trends and challenges
-        - Market size and growth
-        """)
+        # Generate search queries using LLM (with exception handling)
+        try:
+            queries = await self.generate_queries(state, """
+            Generate queries on the industry analysis of {company} in the {industry} industry such as:
+            - Market position
+            - Competitors
+            - {industry} industry trends and challenges
+            - Market size and growth
+            """)
+        except Exception as e:
+            logger.error(f"Error generating queries for {self.analyst_type}: {e}")
+            msg.append(f"\n⚠️ Error generating queries: {str(e)}")
+            queries = self._fallback_queries(company, None)
 
         subqueries_msg = "🔍 Subqueries for industry analysis:\n" + "\n".join([f"• {query}" for query in queries])
         messages = state.get('messages', [])
         messages.append(AIMessage(content=subqueries_msg))
-        state['messages'] = messages
 
         # Send queries through WebSocket
         if websocket_manager := state.get('websocket_manager'):
@@ -77,16 +85,14 @@ class IndustryAnalyzer(BaseResearcher):
                         }
                     )
         except Exception as e:
+            logger.error(f"Error during {self.analyst_type} research: {e}")
             msg.append(f"\n⚠️ Error during research: {str(e)}")
         
-        # Update state with our findings
-        messages = state.get('messages', [])
+        # Return state updates (no in-place mutation)
         messages.append(AIMessage(content="\n".join(msg)))
-        state['messages'] = messages
-        state['industry_data'] = industry_data
         
         return {
-            'message': msg,
+            'messages': messages,
             'industry_data': industry_data
         }
 

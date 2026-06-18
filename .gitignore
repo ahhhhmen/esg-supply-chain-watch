@@ -1,6 +1,13 @@
-# Environment and secrets
-.env
+# Generated reports and output artifacts
+esg_global_report.md
 reports/*
+pdfs/*
+*.pdf
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Python
 __pycache__/

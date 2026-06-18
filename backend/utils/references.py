@@ -73,7 +73,7 @@ def clean_title(title: str) -> str:
     
     original_title = title
     
-    title = title.strip().rstrip('.').strip('"\'')
+    title = title.strip().strip('"\'').rstrip('.').strip('"\'')
     title = re.sub(r'^\d{4}[-\s]*\d{1,2}[-\s]*\d{1,2}[-\s]*', '', title)
     title = title.strip('- ').strip()
     

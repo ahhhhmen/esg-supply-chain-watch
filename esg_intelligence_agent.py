@@ -25,7 +25,6 @@ import html
 import json
 import logging
 import os
-os.environ["DEEPSEEK_API_KEY"] = "sk-6110382d87864de58b25ee87b6e06be6"
 import re
 import sys
 import time
@@ -43,6 +42,7 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 
 from sourcing_engine import SourcingEngine
+from backend.utils.references import clean_title, normalize_url, extract_domain_name
 
 # ─────────────────────────────────────────────────────────
 # 日志
@@ -128,7 +128,9 @@ class AgentConfig:
     # ── 工厂方法 ──────────────────────────────────────────
 
     @classmethod
-    def from_yaml(cls, path: str = "config.yaml") -> "AgentConfig":
+    def from_yaml(cls, path: str = None) -> "AgentConfig":
+        if path is None:
+            path = str(Path(__file__).parent / "config.yaml")
         raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
         tracks = raw.get("intelligence_tracks", {})
         topics = raw.get("topics", {})
@@ -1599,11 +1601,14 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             except (ValueError, TypeError):
                 pass
 
+            raw_title = str(item.get("title", ""))
+            raw_url = str(item.get("link", ""))
+            
             self.articles.append(NewsArticle(
-                title=str(item.get("title", "")),
+                title=clean_title(raw_title) or raw_title,
                 date=pub_date_str,
                 source=str(item.get("source_id", "SourcingEngine")),
-                url=str(item.get("link", "")),
+                url=normalize_url(raw_url) or raw_url,
                 description=str(item.get("content", ""))[:300],
                 company_name_zh="",   # 供料引擎未绑定企业归属，由下游 LLM 识别
                 company_name_en="",
@@ -1623,11 +1628,15 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 
         # ── Phase 2: Dedup by title + url (双重去重) ─────
         raw_count = len(self.articles)
-        df_tmp = pd.DataFrame([a.__dict__ for a in self.articles])\
+        df_tmp = pd.DataFrame([a.__dict__ for a in self.articles])
+        # Normalize URLs before dedup to merge UTM/tracking-parameter variants
+        df_tmp["_norm_url"] = df_tmp["url"].apply(lambda u: normalize_url(u) if u else u)
+        df_tmp = df_tmp\
             .drop_duplicates(subset=["title"], keep="first")\
-            .drop_duplicates(subset=["url"], keep="first")
+            .drop_duplicates(subset=["_norm_url"], keep="first")
+        df_tmp = df_tmp.drop(columns=["_norm_url"])
         self.articles = [NewsArticle(**row.to_dict()) for _, row in df_tmp.iterrows()]
-        logger.info(f"Phase 2 dedup (title+url): {raw_count} -> {len(self.articles)} articles")
+        logger.info(f"Phase 2 dedup (title+norm_url): {raw_count} -> {len(self.articles)} articles")
 
         # ── Phase 3: Deep Content Extraction ────────────
         logger.info(f"Phase 3: Extracting body text from {len(self.articles)} articles...")
@@ -1734,7 +1743,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         dmax = max(date_values) if date_values else "?"
         logger.info(f"All done in {elapsed:.1f}s | {len(intelligence_json)} valid items | {dmin} ~ {dmax}")
 
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = None):
         self.config = AgentConfig.from_yaml(config_path)
         self.articles: list[NewsArticle] = []
         self._seen_urls: set[str] = set()
@@ -1768,8 +1777,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--config",
-        default="config.yaml",
-        help="配置文件路径（默认: config.yaml）",
+        default=None,
+        help="配置文件路径（默认: 脚本同目录下的 config.yaml）",
     )
     parser.add_argument(
         "--report",

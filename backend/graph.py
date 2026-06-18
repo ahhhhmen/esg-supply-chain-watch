@@ -3,7 +3,7 @@ from langgraph.graph import StateGraph
 from typing import Dict, Any, AsyncIterator
 import logging
 
-from .classes.state import InputState
+from .classes.state import InputState, ResearchState
 from .nodes import GroundingNode
 from .nodes.researchers import (FinancialAnalyst, NewsScanner, 
                                IndustryAnalyzer, CompanyAnalyzer)
@@ -53,7 +53,7 @@ class Graph:
 
     def _build_workflow(self):
         """Configure the state graph workflow"""
-        self.workflow = StateGraph(InputState)
+        self.workflow = StateGraph(ResearchState)
         
         # Add nodes with their respective processing functions
         self.workflow.add_node("grounding", self.ground.run)

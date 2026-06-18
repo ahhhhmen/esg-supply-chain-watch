@@ -28,3 +28,4 @@ class ResearchState(InputState):
     references: List[str]
     briefings: Dict[str, Any]
     report: str
+    editor: NotRequired[Dict[str, Any]]

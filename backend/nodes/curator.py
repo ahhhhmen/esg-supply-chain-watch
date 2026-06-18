@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class Curator:
     def __init__(self) -> None:
         self.relevance_threshold = 0.4  # Fixed initialization of class attribute
-        logger.info("Curator initialized with relevance threshold: {relevance_threshhold}")
+        logger.info(f"Curator initialized with relevance threshold: {self.relevance_threshold}")
 
     async def evaluate_documents(self, state: ResearchState, docs: list, context: Dict[str, str]) -> list:
         """Evaluate documents based on Tavily's scoring."""
@@ -142,6 +142,7 @@ class Curator:
                         doc['doc_type'] = doc_type
                         unique_docs[clean_url] = doc
                 except Exception as e:
+                    logger.warning(f"Skipping malformed URL in {doc_type} curation: {url} — {e}")
                     continue
 
             docs = list(unique_docs.values())

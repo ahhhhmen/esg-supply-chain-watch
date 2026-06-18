@@ -31,7 +31,6 @@ class FinancialAnalyst(BaseResearcher):
             subqueries_msg = "🔍 Subqueries for financial analysis:\n" + "\n".join([f"• {query}" for query in queries])
             messages = state.get('messages', [])
             messages.append(AIMessage(content=subqueries_msg))
-            state['messages'] = messages
 
             # Send queries through WebSocket
             if websocket_manager:
@@ -79,12 +78,9 @@ class FinancialAnalyst(BaseResearcher):
                         }
                     )
             
-            # Update state
+            # Return state updates (no in-place mutation)
             messages.append(AIMessage(content=completion_msg))
-            state['messages'] = messages
-            state['financial_data'] = financial_data
 
-            # Send completion status with final queries
             if websocket_manager and job_id:
                 await websocket_manager.send_status_update(
                     job_id=job_id,
@@ -98,7 +94,7 @@ class FinancialAnalyst(BaseResearcher):
                 )
 
             return {
-                'message': completion_msg,
+                'messages': messages,
                 'financial_data': financial_data,
                 'analyst_type': self.analyst_type,
                 'queries': queries

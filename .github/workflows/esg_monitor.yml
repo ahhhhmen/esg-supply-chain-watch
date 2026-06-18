@@ -1,10 +1,11 @@
 name: Global ESG Daily Monitor (Daily)
 
-# 配置触发时机
-on:
-  schedule:
-    # 每天 UTC 时间 23:45 自动运行（对应北京时间早上 07:45，避开高峰期）
-    - cron: '45 23 * * *'
+	# 配置触发时机
+	on:
+	  schedule:
+	    # 北京时间每天早上 06:00（周五除外，由周报接管），UTC = BJT-8
+	    # UTC 22:00 = BJT 06:00(+1)，跳过周四UTC(对应周五BJT)
+	    - cron: '0 22 * * 0-3,5-6'
   workflow_dispatch:
     # 允许在 GitHub 网页端手动点击运行按钮
 

@@ -6,6 +6,7 @@ SourcingEngine — 声明式配置驱动的 ESG 多轨道供料引擎。
 
 import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -65,6 +66,88 @@ class SourcingEngine:
                 logger.exception("[%s] fetch failed — continuing to next source", src_id)
 
         logger.info("Total aggregated items: %d", len(all_results))
+        return all_results
+
+    def fetch_from_prebuilt_urls(
+        self, url_entries: List[Dict[str, Any]], time_window: str = "24h"
+    ) -> List[Dict[str, Any]]:
+        """从预构建的 RSS URL 列表抓取，用于 query_tasks + AI 动态发现等非静态轨道。
+
+        Args:
+            url_entries: 每条包含 {"url": str, "source_id": str}
+            time_window: 全局时间窗，应用于所有 URL（默认 24h）
+
+        Returns:
+            标准化 items 列表，与 fetch_all_active_sources() 格式一致。
+        """
+        if not url_entries:
+            return []
+
+        cutoff = datetime.now(timezone.utc) - self._parse_time_window(time_window)
+        all_results: List[Dict[str, Any]] = []
+        fetch_count = 0
+        total_urls = len(url_entries)
+
+        for entry in url_entries:
+            rss_url = str(entry.get("url", "")).strip()
+            source_id = str(entry.get("source_id", "dynamic_query"))
+
+            if not rss_url:
+                continue
+
+            fetch_count += 1
+            try:
+                feed = feedparser.parse(rss_url)
+                items_in_feed = 0
+                for feed_entry in feed.entries:
+                    pub_date: Optional[datetime] = None
+                    parsed: Optional[Any] = None
+                    if hasattr(feed_entry, "published_parsed") and feed_entry.published_parsed:
+                        parsed = feed_entry.published_parsed
+                    elif hasattr(feed_entry, "updated_parsed") and feed_entry.updated_parsed:
+                        parsed = feed_entry.updated_parsed
+
+                    if parsed:
+                        try:
+                            pub_date = datetime(
+                                int(parsed[0]), int(parsed[1]), int(parsed[2]),
+                                int(parsed[3]), int(parsed[4]), int(parsed[5]),
+                                tzinfo=timezone.utc,
+                            )
+                        except (IndexError, TypeError, ValueError):
+                            pass
+
+                    if pub_date and pub_date < cutoff:
+                        continue
+
+                    title = getattr(feed_entry, "title", "")
+                    link = getattr(feed_entry, "link", "")
+                    summary = getattr(feed_entry, "summary", "")
+                    content_body = f"{title}\n{summary}".strip()
+
+                    all_results.append({
+                        "title": title,
+                        "link": link,
+                        "pub_date": pub_date.isoformat() if pub_date else datetime.now(timezone.utc).isoformat(),
+                        "source_id": source_id,
+                        "content": content_body,
+                    })
+                    items_in_feed += 1
+
+                if items_in_feed > 0:
+                    logger.debug("[%s] collected %d item(s)", source_id, items_in_feed)
+
+            except Exception:
+                logger.debug("[%s] fetch skipped (non-critical)", source_id)
+
+            # 渐进间隔：每 20 条停顿 0.5s，防止 Google News 限流
+            if fetch_count % 20 == 0 and fetch_count < total_urls:
+                time.sleep(0.5)
+
+        logger.info(
+            "Dynamic URL fetch complete: %d/%d URLs, %d total items",
+            fetch_count, total_urls, len(all_results),
+        )
         return all_results
 
     # ------------------------------------------------------------------

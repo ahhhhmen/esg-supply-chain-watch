@@ -761,6 +761,61 @@ class ESGIntelligenceAgent:
     DEEPSEEK_BASE_URL = "https://api.deepseek.com"
     DEEPSEEK_MODEL    = "deepseek-chat"
 
+    # DeepSeek 定价 (USD per 1M tokens)
+    _PRICE_INPUT_PER_1M  = 0.14   # $0.14 / 1M input tokens
+    _PRICE_OUTPUT_PER_1M = 0.28   # $0.28 / 1M output tokens
+
+    # Token 消耗追踪（实例级，每次 run() 重置）
+    _token_stats: dict = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "total_cost_usd": 0.0,
+    }
+
+    @classmethod
+    def _accumulate_tokens(cls, usage) -> None:
+        """从 OpenAI response.usage 累积 token 统计。"""
+        if usage is None:
+            return
+        try:
+            prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+            completion = int(getattr(usage, "completion_tokens", 0) or 0)
+            total = int(getattr(usage, "total_tokens", 0) or 0) or (prompt + completion)
+        except (TypeError, ValueError):
+            return
+
+        cls._token_stats["prompt_tokens"] += prompt
+        cls._token_stats["completion_tokens"] += completion
+        cls._token_stats["total_tokens"] += total
+        cls._token_stats["total_cost_usd"] += (
+            prompt * cls._PRICE_INPUT_PER_1M / 1_000_000
+            + completion * cls._PRICE_OUTPUT_PER_1M / 1_000_000
+        )
+
+    @classmethod
+    def _log_token_summary(cls) -> str:
+        """输出 token 消耗日志，返回可用于报告底部的摘要字符串。"""
+        s = cls._token_stats
+        summary = (
+            f"💰 Token 消耗: "
+            f"输入 {s['prompt_tokens']:,} + 输出 {s['completion_tokens']:,} "
+            f"= {s['total_tokens']:,} tokens | "
+            f"预估费用 ${s['total_cost_usd']:.4f}"
+        )
+        logger.info(summary)
+        return summary
+
+    @classmethod
+    def _reset_token_stats(cls) -> None:
+        """每次 run() 开始时重置统计。"""
+        cls._token_stats = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "total_cost_usd": 0.0,
+        }
+
     @classmethod
     def _build_system_prompt(cls, company_names: list[str], mode: str) -> str:
         """构建 DeepSeek System Prompt - v11 华友钴业中心制。"""
@@ -881,6 +936,172 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 
     # 分批处理常量：每批最多发送的文章数
     BATCH_SIZE = 15
+
+    @classmethod
+    def _generate_ai_discovery_queries(cls, mode: str, company_names: list[str]) -> list[str]:
+        """Phase 0.5: 让 AI 生成当日动态搜索词，填补静态关键词矩阵盲区。
+
+        向 DeepSeek 发送专用 prompt，基于当前监控目标、风险类别和历史漏报教训，
+        生成 5-10 条 Google News 搜索查询，捕获静态矩阵可能遗漏的新兴威胁。
+
+        Returns:
+            搜索查询字符串列表（未编码的原始查询）。
+            失败时返回空列表，不阻断主流程。
+        """
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            logger.info("[AI发现] DEEPSEEK_API_KEY 未设置，跳过动态查询生成")
+            return []
+
+        companies_str = "\n".join(f"  - {name}" for name in company_names)
+        mode_label = "daily（劳工权益、环境污染、社区冲突）" if mode == "daily" else "weekly（覆盖全部 6 类风险主题：劳工、环境、社区、欧盟准入、美国地缘封锁、资源国民族主义）"
+
+        system_prompt = f"""你是一个 ESG 供应链风险情报分析师。你负责为一套自动化监控系统生成每日补充搜索词。
+
+## 当前监控矩阵
+**已监控企业**（{len(company_names)} 家）：
+{companies_str}
+
+**当前模式**: {mode_label}
+
+**已知盲区教训**:
+- 2026年6月16日漏报「紫金矿业遭美国 CBP 扣押令(WRO)」事件，因为紫金矿业不在监控名单且 WRO/forced labor 关键词未覆盖。
+
+## 你的任务
+基于当前日期、已监控企业、风险类别和历史盲区教训，生成 5-10 条 Google News 搜索查询（纯英文），这些查询应该能捕获我们静态关键词矩阵可能遗漏的新兴威胁。
+
+### 查询设计原则
+1. **不重复已有覆盖**: 如果某公司已在监控矩阵中，不要生成针对该公司的查询
+2. **横向扩展**: 关注同行业/同产业链的未监控企业（如其他中国矿企、电池材料商）
+3. **纵向追溯**: 关注上游原料产地（非洲铜钴带、南美锂三角、印尼镍矿）的新兴事件
+4. **监管动向**: 关注美国海关(CBP)、欧盟、资源国政府的最新制裁/立法/禁令
+5. **产业趋势**: 关注可能引发供应链重构的重大技术、贸易或地缘变化
+
+### 输出格式
+返回纯 JSON 对象，格式：{{"queries": ["query string 1", "query string 2", ...]}}
+每条 query 是可直接用于 Google News 搜索的布尔表达式。
+如果没有适合补充的查询，返回 {{"queries": []}}。
+仅输出 JSON，不要包含任何解释或 Markdown 标记。"""
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        user_message = f"今天是 {today_str}。请基于当前监控矩阵和盲区教训，生成今日补充搜索查询。"
+
+        try:
+            client = OpenAI(api_key=api_key, base_url=cls.DEEPSEEK_BASE_URL)
+            response = client.chat.completions.create(
+                model=cls.DEEPSEEK_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.3,
+                max_tokens=1024,
+            )
+            cls._accumulate_tokens(response.usage)
+            raw = response.choices[0].message.content or ""
+
+            # 解析 JSON
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                # 尝试从 markdown 代码块中提取
+                import re as _re
+                m = _re.search(r'\{.*\}', raw, _re.DOTALL)
+                if m:
+                    data = json.loads(m.group())
+                else:
+                    logger.warning("[AI发现] 无法解析查询生成响应 JSON")
+                    return []
+
+            queries = data.get("queries", [])
+            if not isinstance(queries, list):
+                return []
+
+            valid_queries = [q.strip() for q in queries if isinstance(q, str) and q.strip()]
+            logger.info(
+                f"[AI发现] 生成了 {len(valid_queries)} 条动态搜索查询: "
+                f"{valid_queries[:3]}{'...' if len(valid_queries) > 3 else ''}"
+            )
+            return valid_queries
+
+        except Exception as e:
+            logger.warning(f"[AI发现] 查询生成失败 ({type(e).__name__}: {e})，回退到静态矩阵")
+            return []
+
+    @classmethod
+    def _weekly_threat_landscape_review(
+        cls, events: list[dict], report_path: str, token_summary: str
+    ) -> None:
+        """Phase 6 (weekly only): LLM 分析本周监控盲区，追加到周报末尾。
+
+        将本周所有捕获事件发送给 DeepSeek，分析：
+        1. 哪些实体/关键词/区域在当前监控矩阵中缺失
+        2. 哪些新兴威胁模式未被覆盖
+        3. 对 esg_sources.yaml 和 config.yaml 的具体补充建议
+
+        输出追加到周报文件末尾作为「🔍 监控矩阵盲区分析」章节。
+        """
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            logger.info("[周度审查] DEEPSEEK_API_KEY 未设置，跳过威胁态势审查")
+            return
+
+        if not events:
+            placeholder = "\n\n---\n\n## 🔍 监控矩阵盲区分析\n\n本周未捕获风险事件，无法进行态势审查。\n"
+            with open(report_path, "a", encoding="utf-8") as f:
+                f.write(placeholder)
+            logger.info("[周度审查] 无事件数据，写入空审查占位")
+            return
+
+        # 构建事件摘要
+        events_summary_lines = []
+        for i, e in enumerate(events[:50]):  # 最多送 50 条防止 token 爆炸
+            entity = e.get("entity", "未知")
+            title = e.get("core_event_title_en") or e.get("display_title_zh", "")
+            cat = e.get("risk_category", "")
+            valid = e.get("is_valid_risk", False)
+            material = e.get("is_direct_material_impact", False)
+            events_summary_lines.append(
+                f"{i+1}. [{entity}] {title} | 类别:{cat} | 有效:{valid} | 实质:{material}"
+            )
+        events_text = "\n".join(events_summary_lines)
+
+        system_prompt = """你是一个 ESG 监控系统架构师。你会收到本周系统捕获的所有风险事件摘要。
+请分析当前监控矩阵的盲区，输出以下内容：
+
+1. **缺失实体**: 本周事件中出现了哪些未被纳入监控的重要企业/组织？
+2. **缺失关键词**: 哪些风险类型的关键词组合未被覆盖，导致可能漏报？
+3. **新兴威胁模式**: 本周事件中是否出现了新的制裁/立法/产业趋势，需要新增监控轨道？
+4. **具体建议**: 对 esg_sources.yaml 新增轨道的具体 YAML 配置建议。
+
+用中文输出，简洁专业。如果当前矩阵覆盖良好，直接说明"本周未发现明显盲区"。
+输出直接追加到周报文件，格式为 Markdown。"""
+
+        user_message = f"以下是本周捕获的风险事件（共 {len(events)} 条，展示前 {min(len(events), 50)} 条）:\n\n{events_text}"
+
+        try:
+            client = OpenAI(api_key=api_key, base_url=cls.DEEPSEEK_BASE_URL)
+            response = client.chat.completions.create(
+                model=cls.DEEPSEEK_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.2,
+                max_tokens=2048,
+            )
+            cls._accumulate_tokens(response.usage)
+            analysis = response.choices[0].message.content or ""
+
+            # 追加到周报文件
+            section = f"\n\n---\n\n## 🔍 监控矩阵盲区分析\n\n{analysis}\n"
+            with open(report_path, "a", encoding="utf-8") as f:
+                f.write(section)
+            logger.info(f"[周度审查] 盲区分析已追加到 {report_path}")
+
+        except Exception as e:
+            logger.warning(f"[周度审查] LLM 调用失败 ({type(e).__name__}: {e})，跳过态势审查")
 
     @classmethod
     def _extract_events_object(cls, text: str) -> Optional[list]:
@@ -1461,6 +1682,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 max_tokens=4096,
             )
             raw = response.choices[0].message.content or ""
+            cls._accumulate_tokens(response.usage)
             # 提取 JSON 数组
             match = re.search(r"\[.*\]", raw, re.DOTALL)
             if not match:
@@ -1531,6 +1753,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 )
 
                 raw_output = response.choices[0].message.content or ""
+                self._accumulate_tokens(response.usage)
                 logger.info(f"  LLM response received ({len(raw_output)} chars).")
 
                 parsed = self._extract_events_object(raw_output)
@@ -1620,13 +1843,59 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         t0 = time.monotonic()
         logger.info(f"═══ ESG Intelligence Agent v9 | Mode: {mode.upper()} ═══")
 
+        # ── 重置 Token 统计 ─────────────────────────
+        self._reset_token_stats()
+
         query_tasks = self.config.build_query_tasks(mode)
         logger.info(f"Query tasks: {len(query_tasks)} (mode={mode})")
 
-        # ── Phase 1: Sourcing Engine 统一供料 ─────────────
+        # ── Phase 0.5: AI 动态搜索词生成 ─────────────
+        company_names = self.config.get_all_company_display_names()
+        ai_discovery_urls: list[dict] = []
+        try:
+            discovery_queries = self._generate_ai_discovery_queries(mode, company_names)
+            for i, dq in enumerate(discovery_queries):
+                from urllib.parse import quote
+                encoded = quote(dq, safe="")
+                ai_url = (
+                    f"https://news.google.com/rss/search?"
+                    f"q={encoded}&hl=en-US&gl=US&ceid=US:en"
+                )
+                ai_discovery_urls.append({
+                    "url": ai_url,
+                    "source_id": f"ai_discovery_{i + 1}",
+                })
+            if ai_discovery_urls:
+                logger.info(f"AI discovery: generated {len(ai_discovery_urls)} dynamic queries")
+        except Exception as e:
+            logger.warning(f"AI discovery query generation failed ({e}), continuing with static matrix only")
+
+        # ── Phase 1: Sourcing Engine 三层供料 ─────────────
         engine = SourcingEngine()
+
+        # 1a. 静态轨道（esg_sources.yaml）
         raw_items = engine.fetch_all_active_sources()
-        for item in raw_items:
+
+        # 1b. 动态任务矩阵（config.yaml query_tasks）— 修复死代码
+        dynamic_urls: list[dict] = []
+        for task in query_tasks:
+            dynamic_urls.append({
+                "url": task.url,
+                "source_id": f"matrix_{task.track_label}_{task.lang}",
+            })
+        dynamic_items = engine.fetch_from_prebuilt_urls(dynamic_urls, time_window="24h")
+
+        # 1c. AI 动态发现查询
+        ai_items = engine.fetch_from_prebuilt_urls(ai_discovery_urls, time_window="24h")
+
+        # 合并所有来源
+        all_raw_items = raw_items + dynamic_items + ai_items
+        logger.info(
+            f"Phase 1 totals: {len(raw_items)} static + {len(dynamic_items)} dynamic + "
+            f"{len(ai_items)} ai-discovery = {len(all_raw_items)} items"
+        )
+
+        for item in all_raw_items:
             pub_date_str = item.get("pub_date", "")
             parsed_date = None
             try:
@@ -1643,7 +1912,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 source=str(item.get("source_id", "SourcingEngine")),
                 url=normalize_url(raw_url) or raw_url,
                 description=str(item.get("content", ""))[:300],
-                company_name_zh="",   # 供料引擎未绑定企业归属，由下游 LLM 识别
+                company_name_zh="",
                 company_name_en="",
                 track_label=f"供料矩阵 ({item.get('source_id', '')})",
                 lang="auto",
@@ -1653,10 +1922,41 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         logger.info(f"Phase 1: Sourcing Engine 返回了 {len(self.articles)} 条有效纯净数据。")
 
         if not self.articles:
+            # FATAL 熔断前仍写入占位报告，明确系统已巡检
             self._send_system_alert(
                 "🚨 [FATAL级警报] ESG雷达抓取源严重失效触发零数据熔断。"
                 "今日抓取量为0，请立刻排查网络节点或RSS解析器状态！"
             )
+            # 零数据时写入占位报告
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if mode == "weekly":
+                title = "🏛️ ESG 全球地缘与合规周报 (Weekly Strategy Insight)"
+                first_line = "🔮【宏观合规战略】全球地缘与准入壁垒周报"
+            else:
+                title = "🏛️ ESG 全球供应链动态日报 (Daily Intelligence)"
+                first_line = "全球供应链合规与风险速递"
+            placeholder = "\n".join([
+                f"# {title}",
+                "",
+                f"> {first_line}",
+                f"> 📅 **生成时间**: {now_str}",
+                f"> 📊 **情报总数**: 0 条 | 涉及企业: 0 家",
+                "",
+                "---",
+                "",
+                "## 📑 今日无风险事件",
+                "",
+                "今日无新增实质性供应链断裂与合规风险。",
+                "系统今日已成功巡检，所有供料轨道均无数据返回。",
+                "",
+                "---",
+                "",
+                "🤖 *本报告由 ESG Intelligence Agent 自动生成，数据来源于公开新闻源。*",
+                "⚠️  *仅供决策参考，不构成投资或法律建议。*",
+            ])
+            Path(report_path).write_text(placeholder, encoding="utf-8")
+            logger.info(f"零数据占位报告已写入: {report_path}")
+            self._log_token_summary()
             return
 
         # ── Phase 2: Dedup by title + url (双重去重) ─────
@@ -1775,6 +2075,22 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         dmin = min(date_values) if date_values else "?"
         dmax = max(date_values) if date_values else "?"
         logger.info(f"All done in {elapsed:.1f}s | {len(intelligence_json)} valid items | {dmin} ~ {dmax}")
+
+        # ── Token 消耗摘要 + 追加到报告底部 ────────────
+        token_summary = self._log_token_summary()
+        try:
+            token_footer = f"\n\n---\n\n{token_summary}\n"
+            with open(report_path, "a", encoding="utf-8") as rf:
+                rf.write(token_footer)
+        except Exception:
+            pass
+
+        # ── Phase 6: 周度威胁态势审查 (weekly only) ──
+        if mode == "weekly":
+            try:
+                self._weekly_threat_landscape_review(all_v10_events, report_path, token_summary)
+            except Exception as e:
+                logger.warning(f"Weekly threat review failed ({e}), weekly report unaffected")
 
     def __init__(self, config_path: str = None):
         self.config = AgentConfig.from_yaml(config_path)

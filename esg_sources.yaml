@@ -1,17 +1,17 @@
-version: "12.2_esg_matrix"
+version: "12.3_esg_matrix"
 esg_sources:
   # 轨道1：动态天网 - 重点企业与高危地区组合监控
   - id: "radar_byd_europe"
     type: "google_news_rss"
     query: '("BYD" OR "CATL") AND ("Hungary" OR "Germany") AND ("probe" OR "labor" OR "environment" OR "strike")'
-    time_window: "7d"
+    time_window: "24h"
     enabled: true
 
   # 轨道2：动态天网 - 华友自身及核心上游矿区监控
   - id: "radar_huayou_africa"
     type: "google_news_rss"
     query: '"Huayou Cobalt" AND ("Zimbabwe" OR "DRC" OR "Ghana") AND ("halt" OR "accident" OR "protest" OR "ban")'
-    time_window: "7d"
+    time_window: "24h"
     enabled: true
 
   # 轨道3：静态 HTML 靶向 - 核心 NGO
@@ -19,4 +19,18 @@ esg_sources:
     type: "html"
     url: "[https://www.business-humanrights.org/en/latest-news/](https://www.business-humanrights.org/en/latest-news/)"
     dom_selector: "div.latest-news-list"
+    enabled: true
+
+  # 轨道4：新增关键矿产巨头监控（紫金矿业等）
+  - id: "radar_zijin_global"
+    type: "google_news_rss"
+    query: '"Zijin" AND ("CBP" OR "WRO" OR "forced labor" OR "strike" OR "environment" OR "halt")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道5：美国海关 WRO/强迫劳动泛抓取（不限特定企业，紧盯矿产/电池）
+  - id: "radar_us_customs_wro"
+    type: "google_news_rss"
+    query: '("Withhold Release Order" OR "CBP" OR "UFLPA") AND ("copper" OR "cobalt" OR "lithium" OR "battery" OR "solar")'
+    time_window: "24h"
     enabled: true

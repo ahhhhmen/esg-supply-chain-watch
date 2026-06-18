@@ -1128,6 +1128,35 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             logger.info(
                 f"今日分析样本 {len(all_events)} 篇，命中合规红线 0 篇，执行静默阻断。"
             )
+            # 写入占位报告，覆盖旧日期残留报告，向使用者明确系统今日已成功巡检
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if mode == "weekly":
+                title = "🏛️ ESG 全球地缘与合规周报 (Weekly Strategy Insight)"
+                first_line = "🔮【宏观合规战略】全球地缘与准入壁垒周报"
+            else:
+                title = "🏛️ ESG 全球供应链动态日报 (Daily Intelligence)"
+                first_line = "全球供应链合规与风险速递"
+            placeholder = "\n".join([
+                f"# {title}",
+                "",
+                f"> {first_line}",
+                f"> 📅 **生成时间**: {now_str}",
+                f"> 📊 **情报总数**: 0 条 | 涉及企业: 0 家",
+                "",
+                "---",
+                "",
+                "## 📑 今日无风险事件",
+                "",
+                "今日无新增实质性供应链断裂与合规风险。",
+                f"系统今日已成功巡检，分析样本 {len(all_events)} 篇，均未命中合规红线。",
+                "",
+                "---",
+                "",
+                "🤖 *本报告由 ESG Intelligence Agent 自动生成，数据来源于公开新闻源。*",
+                "⚠️  *仅供决策参考，不构成投资或法律建议。*",
+            ])
+            Path(report_path).write_text(placeholder, encoding="utf-8")
+            logger.info(f"静默阻断占位报告已写入: {report_path}")
             return []
 
         # ── 2. 按风险类别分组 ──
@@ -1563,6 +1592,10 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 
         try:
             content = Path(report_path).read_text(encoding="utf-8")
+            # 静默阻断占位报告不推送，避免钉钉噪音
+            if "今日无新增实质性供应链断裂与合规风险" in content:
+                logger.info("检测到静默阻断占位报告，跳过钉钉推送。")
+                return
             if len(content) > 15000:
                 content = content[:15000] + "\n\n> ⚠️ 报告过长，已自动截断。完整内容请查看源文件。"
 

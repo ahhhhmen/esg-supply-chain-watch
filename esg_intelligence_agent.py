@@ -761,6 +761,29 @@ class ESGIntelligenceAgent:
     DEEPSEEK_BASE_URL = "https://api.deepseek.com"
     DEEPSEEK_MODEL    = "deepseek-chat"
 
+    # ── 钉钉推送格式化常量 ──────────────────────────────────
+    CATEGORY_EMOJI_MAP: dict[str, str] = {
+        "早期合规预警": "🔍",
+        "供应链断裂预警": "🔗",
+        "政策与市场准入": "🚫",
+        "合规与运营危机": "⚠️",
+        "机构与声誉预警": "📢",
+    }
+    CATEGORY_ORDER: list[str] = [
+        "供应链断裂预警",
+        "政策与市场准入",
+        "合规与运营危机",
+        "早期合规预警",
+        "机构与声誉预警",
+    ]
+    CATEGORY_DESCRIPTIONS: dict[str, str] = {
+        "早期合规预警": "尚未引发断供或停产，但面临官方环保调查、劳工审查或严重违规指控的早期阻力",
+        "供应链断裂预警": "仅限物理层面的供给中断（工厂停产、物流瘫痪、核心供应商断供）",
+        "政策与市场准入": "仅限引发无法卖货/买货的事件（实体清单、关税惩罚、进出口禁令、强迫劳动扣留）",
+        "合规与运营危机": "劳工罢工、重大安全事故、产品召回、严重环保罚单引发的即期运营阻断",
+        "机构与声誉预警": "NGO指控、人权机构质询、评级下调等尚未演变为实质停产的高声誉风险事件",
+    }
+
     # DeepSeek 定价 (USD per 1M tokens)
     _PRICE_INPUT_PER_1M  = 0.14   # $0.14 / 1M input tokens
     _PRICE_OUTPUT_PER_1M = 0.28   # $0.28 / 1M output tokens
@@ -1099,9 +1122,11 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             with open(report_path, "a", encoding="utf-8") as f:
                 f.write(section)
             logger.info(f"[周度审查] 盲区分析已追加到 {report_path}")
+            return analysis
 
         except Exception as e:
             logger.warning(f"[周度审查] LLM 调用失败 ({type(e).__name__}: {e})，跳过态势审查")
+            return None
 
     @classmethod
     def _extract_events_object(cls, text: str) -> Optional[list]:
@@ -1378,7 +1403,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             ])
             Path(report_path).write_text(placeholder, encoding="utf-8")
             logger.info(f"静默阻断占位报告已写入: {report_path}")
-            return []
+            return [], []
 
         # ── 2. 按风险类别分组 ──
         categorized: dict[str, list[dict]] = {
@@ -1565,7 +1590,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 "tags": [risk_cat] if risk_cat else ["日常运营风险"],
                 "url": str(e.get("url", "")).strip(),
             })
-        return compatible
+        return compatible, valid_events
 
     @classmethod
     def _build_articles_text(cls, batch: list[dict], start_idx: int) -> str:
@@ -1805,6 +1830,155 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         except Exception as exc:
             logger.error(f"[SYSTEM_ALERT] 钉钉报警发送失败: {exc}")
 
+    # ── 钉钉推送格式化 ──────────────────────────────────────
+
+    @staticmethod
+    def _get_severity_marker(category: str, is_material: bool) -> str:
+        """根据风险类别和材料冲击判定严重度标记。"""
+        if category in ("供应链断裂预警", "合规与运营危机") and is_material:
+            return "🔥"
+        elif category in ("政策与市场准入", "早期合规预警") and is_material:
+            return "⚡"
+        else:
+            return "⚠️"
+
+    @classmethod
+    def _format_for_dingtalk(cls, valid_events: list[dict], mode: str, now_str: str, dmin: str, dmax: str, weekly_review_text: str = None) -> str:
+        """从结构化事件数据构建钉钉优化版 Markdown 消息。"""
+        # ── 按风险类别分组 ──
+        categorized: dict[str, list[dict]] = {k: [] for k in cls.CATEGORY_ORDER}
+        for e in valid_events:
+            cat = str(e.get("risk_category", "")).strip()
+            if cat == "市场准入预警":
+                cat = "政策与市场准入"
+            if cat in categorized:
+                categorized[cat].append(e)
+            else:
+                categorized.setdefault("合规与运营危机", []).append(e)
+
+        # 组内按日期降序
+        for cat in cls.CATEGORY_ORDER:
+            categorized[cat].sort(key=lambda e: str(e.get("date", "")), reverse=True)
+
+        # ── 标题 ──
+        if mode == "weekly":
+            title = "🏛️ ESG 全球地缘与合规周报 (Weekly Strategy Insight)"
+        else:
+            title = "🏛️ ESG 全球供应链动态日报 (Daily Intelligence)"
+
+        n_events = len(valid_events)
+        n_companies = len(set(e.get("entity", "") for e in valid_events))
+
+        lines: list[str] = [
+            f"# {title}",
+            f"> 📅 {now_str} · 📊 {n_events} 条情报 · {n_companies} 家企业 · 📆 {dmin} ~ {dmax}",
+            "",
+        ]
+
+        # ── 目录 ──
+        lines.append("## 📑 目录")
+        lines.append("")
+        for cat in cls.CATEGORY_ORDER:
+            evs = categorized.get(cat, [])
+            if not evs:
+                continue
+            emoji = cls.CATEGORY_EMOJI_MAP.get(cat, "")
+            lines.append(f"- {emoji} **{cat}** · {len(evs)} 条")
+        lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━━━━")
+        lines.append("")
+
+        # ── 各分类内容 ──
+        for cat in cls.CATEGORY_ORDER:
+            evs = categorized.get(cat, [])
+            if not evs:
+                continue
+            emoji = cls.CATEGORY_EMOJI_MAP.get(cat, "")
+            desc = cls.CATEGORY_DESCRIPTIONS.get(cat, "")
+            lines.append(f"## {emoji} {cat}")
+            lines.append(f"> {desc}")
+            lines.append("")
+
+            for e in evs:
+                entity = str(e.get("entity", "")).strip()
+                title_text = str(
+                    e.get("display_title_zh")
+                    or e.get("core_event_title_en")
+                    or e.get("core_event_title", "")
+                ).strip()
+                insight = str(e.get("executive_insight", "")).strip()
+                date = str(e.get("date", ""))[:10]
+                is_material = bool(e.get("is_direct_material_impact", False))
+
+                severity = cls._get_severity_marker(cat, is_material)
+
+                # ── 信息源聚合 + 折叠 ──
+                sources_raw = e.get("sources", [])
+                event_lang = str(e.get("original_language", "")).strip()
+                source_links: list[str] = []
+                seen_labels: set[str] = set()
+                if isinstance(sources_raw, list):
+                    for s in sources_raw:
+                        if isinstance(s, dict):
+                            name = str(s.get("name", "")).strip()
+                            src_url = str(s.get("url", "")).strip()
+                            s_lang = str(s.get("original_language", "")) or event_lang
+                            if name:
+                                label = f"{name} ({s_lang})" if s_lang else name
+                                if label in seen_labels:
+                                    continue
+                                seen_labels.add(label)
+                                if src_url and src_url.lower().startswith("http"):
+                                    source_links.append(f"[{label}]({src_url})")
+                                else:
+                                    source_links.append(label)
+                        elif isinstance(s, str) and s.strip():
+                            if s.strip() not in seen_labels:
+                                seen_labels.add(s.strip())
+                                source_links.append(s.strip())
+
+                if len(source_links) > 2:
+                    visible = source_links[:2]
+                    total = len(source_links)
+                    sources_str = " · ".join(visible) + f" · 等 {total} 家"
+                elif source_links:
+                    sources_str = " · ".join(source_links)
+                else:
+                    sources_str = "Unknown"
+
+                lines.append(f"{severity} **{entity} | {title_text}**")
+                lines.append("")
+                lines.append(f"{insight}")
+                lines.append("")
+                lines.append(f"📅 {date} · 📰 {sources_str}")
+                lines.append("")
+                lines.append("━━━━━━━━━━━━━━━━━━━━")
+                lines.append("")
+
+        # ── 周度盲区分析 (weekly only) ──
+        if mode == "weekly" and weekly_review_text:
+            # 盲区分析可能很长，在钉钉中做适度截断保留核心内容
+            review = weekly_review_text.strip()
+            if len(review) > 3000:
+                review = review[:3000] + "\n\n> ⚠️ 盲区分析过长已截断，完整内容请查看周报文件。"
+            lines.append("## 🔍 监控矩阵盲区分析")
+            lines.append("")
+            lines.append(review)
+            lines.append("")
+            lines.append("━━━━━━━━━━━━━━━━━━━━")
+            lines.append("")
+
+        # ── 页脚 ──
+        lines.append("🤖 由 ESG Intelligence Agent 自动生成 · 仅供决策参考")
+
+        ding_content = "\n".join(lines)
+
+        # 截断保护
+        if len(ding_content) > 15000:
+            ding_content = ding_content[:15000] + "\n\n> ⚠️ 报告过长，已自动截断。完整内容请查看源文件。"
+
+        return ding_content
+
     # ── 钉钉推送 ──────────────────────────────────────────
 
     def push_to_dingtalk(self, report_path: str = "esg_global_report.md", mode: str = "daily") -> None:
@@ -1814,8 +1988,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             return
 
         try:
-            content = Path(report_path).read_text(encoding="utf-8")
-            is_placeholder = "今日无新增实质性供应链断裂与合规风险" in content
+            valid_events = self._last_valid_events
 
             if mode == "weekly":
                 first_line = "🔮【宏观合规战略】全球地缘与准入壁垒周报"
@@ -1824,18 +1997,24 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 first_line = "全球供应链合规与风险速递"
                 ding_title = "🏛️ ESG 全球供应链动态日报 (Daily Intelligence)"
 
-            if is_placeholder:
+            if not valid_events:
                 # 占位报告：发送"一切正常"心跳，让运维知道系统在运行而非故障
                 ding_content = (
                     f"# {first_line}\n\n"
                     f"> ✅ **系统巡检完成，今日无新增风险事件。**\n"
                     f"> 📅 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                 )
-                logger.info("检测到占位报告，发送「无风险」心跳通知。")
+                logger.info("今日无风险事件，发送「无风险」心跳通知。")
             else:
-                if len(content) > 15000:
-                    content = content[:15000] + "\n\n> ⚠️ 报告过长，已自动截断。完整内容请查看源文件。"
-                ding_content = f"# {first_line}\n\n{content}"
+                # 从结构化数据构建钉钉优化版消息
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+                all_dates = [e.get("date", "") for e in valid_events]
+                dmin = min(all_dates) if all_dates else "?"
+                dmax = max(all_dates) if all_dates else "?"
+                ding_content = self._format_for_dingtalk(
+                    valid_events, mode, now_str, dmin, dmax,
+                    weekly_review_text=self._weekly_review_text if mode == "weekly" else None,
+                )
 
             headers = {"Content-Type": "application/json"}
             data = {"msgtype": "markdown", "markdown": {"title": ding_title, "text": ding_content}}
@@ -2075,7 +2254,8 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         logger.info(f"Phase 4 done. LLM returned {len(all_v10_events)} total events (valid + invalid).")
 
         # ── Phase 5: Python 确定性渲染流水线 ─────────────
-        intelligence_json = self._generate_v10_report_and_filter(all_v10_events, mode, report_path)
+        intelligence_json, valid_events = self._generate_v10_report_and_filter(all_v10_events, mode, report_path)
+        self._last_valid_events = valid_events
         logger.info(f"Phase 5 done. Python pipeline: {len(intelligence_json)} valid items -> {report_path}")
 
         elapsed = time.monotonic() - t0
@@ -2096,14 +2276,18 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         # ── Phase 6: 周度威胁态势审查 (weekly only) ──
         if mode == "weekly":
             try:
-                self._weekly_threat_landscape_review(all_v10_events, report_path, token_summary)
+                weekly_review = self._weekly_threat_landscape_review(all_v10_events, report_path, token_summary)
+                self._weekly_review_text = weekly_review
             except Exception as e:
+                self._weekly_review_text = None
                 logger.warning(f"Weekly threat review failed ({e}), weekly report unaffected")
 
     def __init__(self, config_path: str = None):
         self.config = AgentConfig.from_yaml(config_path)
         self.articles: list[NewsArticle] = []
         self._seen_urls: set[str] = set()
+        self._last_valid_events: list[dict] = []
+        self._weekly_review_text: Optional[str] = None
         self._cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.days_limit)
         geo_count = len(self.config.geographical_tracks)
         prem_c = len(self.config.premium_company_tracks)

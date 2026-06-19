@@ -126,6 +126,15 @@ EOL
     echo -e "${GREEN}✓ Environment variables saved to .env${NC}"
 fi
 
+# Setup Git pre-commit hooks (CI/CD 质量门禁)
+echo -e "\n${BLUE}Setting up Git pre-commit hooks...${NC}"
+if [ -f ".githooks/pre-commit" ]; then
+    git config core.hooksPath .githooks
+    echo -e "${GREEN}✓ Pre-commit hooks installed (YAML 语法 / Tab 检测 / gitignore 冲突)${NC}"
+else
+    echo -e "${BLUE}No custom hooks found — skipping${NC}"
+fi
+
 # Final instructions and server startup options
 echo -e "\n${BOLD}🎉 Setup complete!${NC}"
 

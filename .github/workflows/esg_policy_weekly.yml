@@ -37,6 +37,8 @@ jobs:
       env:
         DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
         DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
       run: |
         python esg_intelligence_agent.py --mode weekly
 

@@ -40,9 +40,11 @@ import requests
 import yaml
 from bs4 import BeautifulSoup
 from openai import OpenAI
+from notion_client import Client as NotionClient
 
 from sourcing_engine import SourcingEngine
 from backend.utils.references import clean_title, normalize_url, extract_domain_name
+from notion_mapping import map_risk_category, map_entity
 
 # ─────────────────────────────────────────────────────────
 # 日志
@@ -73,6 +75,10 @@ FETCH_HEADERS = {
 # ── 钉钉系统报警 Webhook ────────────────────────────────
 # 填写真实 Webhook URL 后生效，为空时仅在控制台打印 ERROR 日志
 DINGTALK_WEBHOOK_URL = ""
+
+# ── Notion 集成配置 ──────────────────────────────────────
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
+NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID", "")
 
 
 # ─────────────────────────────────────────────────────────
@@ -2024,6 +2030,99 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         except Exception as exc:
             logger.error(f"钉钉推送失败: {exc}")
 
+    # ── Notion 推送 ────────────────────────────────────────
+
+    def push_to_notion(self, mode: str = "daily") -> None:
+        """将结构化事件逐条写入 Notion 数据库，实现数据持久化留存。"""
+        token = os.environ.get("NOTION_TOKEN", "")
+        database_id = os.environ.get("NOTION_DATABASE_ID", "")
+
+        if not token or not database_id:
+            logger.info("未配置 Notion (NOTION_TOKEN / NOTION_DATABASE_ID)，跳过推送。")
+            return
+
+        valid_events = self._last_valid_events
+        if not valid_events:
+            logger.info("无风险事件，跳过 Notion 推送。")
+            return
+
+        try:
+            notion = NotionClient(auth=token)
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            success_count = 0
+            fail_count = 0
+
+            logger.info(f"开始向 Notion 写入 {len(valid_events)} 条事件 (database={database_id[:8]}...)...")
+
+            for event in valid_events:
+                try:
+                    # 格式化来源
+                    sources = event.get("sources", [])
+                    if sources:
+                        src_parts = []
+                        for s in sources[:5]:
+                            name = s.get("name", "")
+                            url = s.get("url", "")
+                            if url:
+                                src_parts.append(f"[{name}]({url})")
+                            else:
+                                src_parts.append(name)
+                        sources_text = ", ".join(src_parts)
+                    else:
+                        sources_text = ""
+
+                    # 分类映射：agent 原始分类 → Notion 新分类
+                    mapped_category = map_risk_category(
+                        event.get("risk_category", ""),
+                        event.get("display_title_zh", ""),
+                        event.get("executive_insight", ""),
+                    )
+
+                    properties = {
+                        "标题": {
+                            "title": [{"text": {"content": event.get("display_title_zh", "")[:2000]}}]
+                        },
+                        "English Title": {
+                            "rich_text": [{"text": {"content": event.get("core_event_title_en", "")[:2000]}}]
+                        },
+                        "Entity": {
+                            "select": {"name": map_entity(event.get("entity", ""))}
+                        },
+                        "Risk Category": {
+                            "select": {"name": mapped_category}
+                        },
+                        "Date": {
+                            "date": {"start": event.get("date", "")}
+                        },
+                        "Executive Insight": {
+                            "rich_text": [{"text": {"content": event.get("executive_insight", "")[:2000]}}]
+                        },
+                        "Sources": {
+                            "rich_text": [{"text": {"content": sources_text[:2000]}}]
+                        },
+                        "Mode": {
+                            "select": {"name": mode}
+                        },
+                        "Push Date": {
+                            "date": {"start": today_str}
+                        },
+                    }
+
+                    notion.pages.create(
+                        parent={"database_id": database_id},
+                        properties=properties,
+                    )
+                    success_count += 1
+                except Exception as item_exc:
+                    fail_count += 1
+                    logger.warning(f"Notion 写入失败 (event: {event.get('display_title_zh', '?')}): {item_exc}")
+
+            logger.info(
+                f"Notion 推送完成: ✅ {success_count} 成功 / ❌ {fail_count} 失败 / 共 {len(valid_events)} 条"
+            )
+        except Exception as exc:
+            logger.error(f"Notion 推送整体失败: {exc}")
+
     # ── 入口 ─────────────────────────────────────────────
 
     def run(self, mode: str = "daily", report_path: str = "esg_global_report.md") -> None:
@@ -2330,7 +2429,7 @@ def parse_args() -> argparse.Namespace:
         "--no-push",
         action="store_true",
         default=False,
-        help="跳过钉钉 Webhook 推送",
+        help="跳过钉钉与 Notion 推送",
     )
     return parser.parse_args()
 
@@ -2341,5 +2440,6 @@ if __name__ == "__main__":
     agent.run(mode=args.mode, report_path=args.report)
     if not args.no_push:
         agent.push_to_dingtalk(mode=args.mode)
+        agent.push_to_notion(mode=args.mode)
     else:
-        logger.info("钉钉推送已跳过（--no-push）。")
+        logger.info("钉钉与 Notion 推送已跳过（--no-push）。")

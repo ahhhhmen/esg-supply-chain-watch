@@ -1815,12 +1815,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 
         try:
             content = Path(report_path).read_text(encoding="utf-8")
-            # 静默阻断占位报告不推送，避免钉钉噪音
-            if "今日无新增实质性供应链断裂与合规风险" in content:
-                logger.info("检测到静默阻断占位报告，跳过钉钉推送。")
-                return
-            if len(content) > 15000:
-                content = content[:15000] + "\n\n> ⚠️ 报告过长，已自动截断。完整内容请查看源文件。"
+            is_placeholder = "今日无新增实质性供应链断裂与合规风险" in content
 
             if mode == "weekly":
                 first_line = "🔮【宏观合规战略】全球地缘与准入壁垒周报"
@@ -1828,7 +1823,20 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             else:
                 first_line = "全球供应链合规与风险速递"
                 ding_title = "🏛️ ESG 全球供应链动态日报 (Daily Intelligence)"
-            ding_content = f"# {first_line}\n\n{content}"
+
+            if is_placeholder:
+                # 占位报告：发送"一切正常"心跳，让运维知道系统在运行而非故障
+                ding_content = (
+                    f"# {first_line}\n\n"
+                    f"> ✅ **系统巡检完成，今日无新增风险事件。**\n"
+                    f"> 📅 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                )
+                logger.info("检测到占位报告，发送「无风险」心跳通知。")
+            else:
+                if len(content) > 15000:
+                    content = content[:15000] + "\n\n> ⚠️ 报告过长，已自动截断。完整内容请查看源文件。"
+                ding_content = f"# {first_line}\n\n{content}"
+
             headers = {"Content-Type": "application/json"}
             data = {"msgtype": "markdown", "markdown": {"title": ding_title, "text": ding_content}}
             logger.info("正在向钉钉发送情报简报...")

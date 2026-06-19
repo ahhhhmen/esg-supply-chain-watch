@@ -31,7 +31,7 @@ from datetime import datetime
 from typing import Optional
 
 from notion_client import Client as NotionClient
-from notion_mapping import map_risk_category, map_entity
+from notion_upsert import upsert_notion_page
 
 logging.basicConfig(
     level=logging.INFO,
@@ -251,142 +251,43 @@ def get_report_content(commit_hash: str) -> str:
     return ""
 
 
-def build_notion_properties(event: dict) -> dict:
-    """将事件字典映射为 Notion API 的 properties 格式（含分类映射）。"""
-    mapped_category = map_risk_category(
-        event.get("category", ""),
-        event.get("display_title_zh", ""),
-        event.get("insight", ""),
-    )
-    return {
-        "标题": {
-            "title": [{"text": {"content": event.get("display_title_zh", "")[:2000]}}]
-        },
-        "English Title": {
-            "rich_text": [{"text": {"content": event.get("english_title", "")[:2000]}}]
-        },
-        "Entity": {
-            "select": {"name": map_entity(event.get("entity", ""))}
-        },
-        "Risk Category": {
-            "select": {"name": mapped_category}
-        },
-        "Date": {
-            "date": {"start": event.get("date", "")}
-        },
-        "Executive Insight": {
-            "rich_text": [{"text": {"content": event.get("insight", "")[:2000]}}]
-        },
-        "Sources": {
-            "rich_text": [{"text": {"content": event.get("sources", "")[:2000]}}]
-        },
-        "Mode": {
-            "select": {"name": event.get("mode", "")}
-        },
-        "Push Date": {
-            "date": {"start": event.get("push_date", "")}
-        },
-    }
-
-
-def dedup_key(event: dict) -> str:
-    """生成去重键 — 基于企业+日期+标题。"""
-    return f"{event.get('entity', '')}|{event.get('date', '')}|{event.get('display_title_zh', '')[:50]}"
-
-
 def write_to_notion(events: list[dict], database_id: str, token: str,
-                    limit: Optional[int] = None) -> tuple[int, int]:
+                    limit: Optional[int] = None, dry_run: bool = False) -> tuple[int, int]:
     """
-    将事件列表写入 Notion 数据库。
+    将事件列表幂等写入 Notion 数据库（通过 External ID 去重 upsert）。
     返回 (成功数, 失败数)。
     """
     notion = NotionClient(auth=token)
 
-    # 获取已有页面用于去重（通过查询数据库）
-    # 兼容新版 Notion SDK：优先用 data_sources.query，回退到 databases.query
-    existing_keys = set()
-    try:
-        has_more = True
-        start_cursor = None
+    events_to_write = events[:limit] if limit else events
 
-        # 尝试找到对应的 data_source_id（inline database 需要通过 data_sources 端点查询）
-        data_source_id = None
-        try:
-            db_info = notion.databases.retrieve(database_id=database_id)
-            ds_list = db_info.get("data_sources", [])
-            if ds_list:
-                data_source_id = ds_list[0].get("id")
-        except Exception:
-            pass
-
-        while has_more:
-            if data_source_id:
-                result = notion.data_sources.query(
-                    data_source_id=data_source_id,
-                    page_size=100,
-                    **({"start_cursor": start_cursor} if start_cursor else {}),
-                )
-            else:
-                query_params = {
-                    "database_id": database_id,
-                    "page_size": 100,
-                }
-                if start_cursor:
-                    query_params["start_cursor"] = start_cursor
-                result = notion.databases.query(**query_params)
-
-            for page in result.get("results", []):
-                props = page.get("properties", {})
-                # 构建去重键
-                entity = ""
-                if "Entity" in props and props["Entity"].get("select"):
-                    entity = props["Entity"]["select"].get("name", "")
-                date = ""
-                if "Date" in props and props["Date"].get("date"):
-                    date = props["Date"]["date"].get("start", "")
-                title = ""
-                if "标题" in props and props["标题"].get("title"):
-                    title = props["标题"]["title"][0]["plain_text"][:50] if props["标题"]["title"] else ""
-                existing_keys.add(f"{entity}|{date}|{title}")
-
-            has_more = result.get("has_more", False)
-            start_cursor = result.get("next_cursor")
-    except Exception as e:
-        logger.warning(f"查询已有 Notion 记录失败（将跳过去重）: {e}")
-
-    # 去重
-    new_events = []
-    for event in events:
-        key = dedup_key(event)
-        if key not in existing_keys:
-            new_events.append(event)
-        else:
-            logger.debug(f"跳过已存在事件: {key}")
-
-    if limit:
-        new_events = new_events[:limit]
-
-    logger.info(f"待写入事件: {len(new_events)} 条（去重后）")
+    if dry_run:
+        logger.info(f"🔍 干跑模式 — 共 {len(events_to_write)} 条事件将被处理（实际未写入）")
 
     success_count = 0
     fail_count = 0
+    skip_count = 0
 
-    for i, event in enumerate(new_events):
+    for i, event in enumerate(events_to_write):
         try:
-            properties = build_notion_properties(event)
-            notion.pages.create(
-                parent={"database_id": database_id},
-                properties=properties,
+            action, page_id = upsert_notion_page(
+                event, notion, database_id, dry_run=dry_run,
             )
-            success_count += 1
+            if action == "created":
+                success_count += 1
+            elif action == "updated":
+                success_count += 1
+            else:
+                skip_count += 1
             logger.info(
-                f"  [{i + 1}/{len(new_events)}] ✅ {event.get('entity', '?')} | "
+                f"  [{i + 1}/{len(events_to_write)}] {action} | "
+                f"{event.get('entity', '?')} | "
                 f"{event.get('display_title_zh', '?')[:40]}"
             )
         except Exception as e:
             fail_count += 1
             logger.warning(
-                f"  [{i + 1}/{len(new_events)}] ❌ {event.get('entity', '?')} | "
+                f"  [{i + 1}/{len(events_to_write)}] ❌ {event.get('entity', '?')} | "
                 f"{event.get('display_title_zh', '?')[:40]}: {e}"
             )
 
@@ -459,9 +360,10 @@ def main():
         logger.info(f"\n🔍 干跑模式 — 以上 {len(all_events)} 条事件将被写入 Notion（实际未写入）。")
         return
 
-    # 4. 写入 Notion
+    # 4. 写入 Notion（通过 External ID upsert 实现幂等）
     logger.info(f"\n开始向 Notion 写入 {len(all_events)} 条事件...")
-    success, fail = write_to_notion(all_events, database_id, token, limit=args.limit)
+    success, fail = write_to_notion(all_events, database_id, token,
+                                    limit=args.limit, dry_run=args.dry_run)
     logger.info(f"\n═══ 回填完成: ✅ {success} 成功 / ❌ {fail} 失败 ═══")
 
 

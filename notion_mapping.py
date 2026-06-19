@@ -15,6 +15,11 @@ notion_mapping.py — Notion Risk Category 分类映射工具
 
 import re
 
+# ── Notion 数据库属性名常量 ─────────────────────────────────────
+
+EXTERNAL_ID = "External ID"
+"""Notion 数据库中用于持久化去重的属性名（类型：Text）。"""
+
 # 直接映射（无需内容判断的分类）
 _CATEGORY_DIRECT_MAP = {
     "供应链断裂预警": "供应链断裂",

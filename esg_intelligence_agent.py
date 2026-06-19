@@ -44,7 +44,7 @@ from notion_client import Client as NotionClient
 
 from sourcing_engine import SourcingEngine
 from backend.utils.references import clean_title, normalize_url, extract_domain_name
-from notion_mapping import map_risk_category, map_entity
+from notion_upsert import upsert_notion_page
 
 # ─────────────────────────────────────────────────────────
 # 日志
@@ -2033,7 +2033,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
     # ── Notion 推送 ────────────────────────────────────────
 
     def push_to_notion(self, mode: str = "daily") -> None:
-        """将结构化事件逐条写入 Notion 数据库，实现数据持久化留存。"""
+        """将结构化事件幂等写入 Notion 数据库（通过 External ID upsert 去重）。"""
         token = os.environ.get("NOTION_TOKEN", "")
         database_id = os.environ.get("NOTION_DATABASE_ID", "")
 
@@ -2054,65 +2054,27 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 
             logger.info(f"开始向 Notion 写入 {len(valid_events)} 条事件 (database={database_id[:8]}...)...")
 
-            for event in valid_events:
+            for i, event in enumerate(valid_events):
                 try:
-                    # 格式化来源
-                    sources = event.get("sources", [])
-                    if sources:
-                        src_parts = []
-                        for s in sources[:5]:
-                            name = s.get("name", "")
-                            url = s.get("url", "")
-                            if url:
-                                src_parts.append(f"[{name}]({url})")
-                            else:
-                                src_parts.append(name)
-                        sources_text = ", ".join(src_parts)
-                    else:
-                        sources_text = ""
+                    # 统一字段命名（兼容 upsert 助手）
+                    event["mode"] = event.get("mode", mode)
+                    event["push_date"] = event.get("push_date", today_str)
+                    # 字段别名
+                    if "english_title" not in event:
+                        event["english_title"] = event.get("core_event_title_en", "")
+                    if "insight" not in event:
+                        event["insight"] = event.get("executive_insight", "")
 
-                    # 分类映射：agent 原始分类 → Notion 新分类
-                    mapped_category = map_risk_category(
-                        event.get("risk_category", ""),
-                        event.get("display_title_zh", ""),
-                        event.get("executive_insight", ""),
+                    action, page_id = upsert_notion_page(
+                        event, notion, database_id, dry_run=False,
                     )
-
-                    properties = {
-                        "标题": {
-                            "title": [{"text": {"content": event.get("display_title_zh", "")[:2000]}}]
-                        },
-                        "English Title": {
-                            "rich_text": [{"text": {"content": event.get("core_event_title_en", "")[:2000]}}]
-                        },
-                        "Entity": {
-                            "select": {"name": map_entity(event.get("entity", ""))}
-                        },
-                        "Risk Category": {
-                            "select": {"name": mapped_category}
-                        },
-                        "Date": {
-                            "date": {"start": event.get("date", "")}
-                        },
-                        "Executive Insight": {
-                            "rich_text": [{"text": {"content": event.get("executive_insight", "")[:2000]}}]
-                        },
-                        "Sources": {
-                            "rich_text": [{"text": {"content": sources_text[:2000]}}]
-                        },
-                        "Mode": {
-                            "select": {"name": mode}
-                        },
-                        "Push Date": {
-                            "date": {"start": today_str}
-                        },
-                    }
-
-                    notion.pages.create(
-                        parent={"database_id": database_id},
-                        properties=properties,
+                    if action in ("created", "updated"):
+                        success_count += 1
+                    logger.info(
+                        f"  [{i + 1}/{len(valid_events)}] {action} | "
+                        f"{event.get('entity', '?')} | "
+                        f"{event.get('display_title_zh', '?')[:40]}"
                     )
-                    success_count += 1
                 except Exception as item_exc:
                     fail_count += 1
                     logger.warning(f"Notion 写入失败 (event: {event.get('display_title_zh', '?')}): {item_exc}")

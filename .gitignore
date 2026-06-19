@@ -1,5 +1,4 @@
 # Generated reports and output artifacts
-esg_global_report.md
 reports/*
 pdfs/*
 *.pdf

@@ -1,316 +1,72 @@
-# Agentic Company Researcher 🔍
+# ESG 全球供应链风险情报监控平台 🔍
 
-![web ui](<static/ui-1.png>)
+基于 AI 的多语种 ESG 风险情报自动化监控与推送系统，以**华友钴业**为中心，覆盖 12 家新能源电池材料供应链关键企业。
 
-A multi-agent tool that generates comprehensive company research reports. The platform uses a pipeline of AI agents to gather, curate, and synthesize information about any company.
+## 核心能力
 
-## Features
+- **多语种全球监控**: 中文/英语/印尼语/法语，4 个语种定向 Google News 抓取
+- **6 阶段智能流水线**: 供料 → 去重 → 实体校验 → LLM 语义降噪 → 合并渲染 → 推送归档
+- **双频动态播报**: `daily`（日常运营风险）/ `weekly`（宏观政策与地缘合规）
+- **四重风险标签**: 供应链断裂 / 政策市场准入 / 合规运营危机 / 机构声誉预警 / 早期合规预警
+- **华友钴业中心制**: 所有高管洞察从华友钴业的产业位置出发进行传导推演
+- **多渠道推送**: 钉钉 Webhook + Notion Database（幂等 upsert）
 
-- **Multi-Source Research**: Gathers data from various sources including company websites, news articles, financial reports, and industry analyses
-- **AI-Powered Content Filtering**: Uses Tavily's relevance scoring for content curation
-- **Real-Time Progress Streaming**: Uses WebSocket connections to stream research progress and results
-- **Dual Model Architecture**: 
-  - Gemini 2.0 Flash for high-context research synthesis
-  - GPT-4.1 for precise report formatting and editing
-- **Modern React Frontend**: Responsive UI with real-time updates, progress tracking, and download options
-- **Modular Architecture**: Built using a pipeline of specialized research and processing nodes
+## 技术架构
 
-## Agent Framework
+```
+esg_agent/                    # 核心模块
+├── config.py                 # 配置管理与双频路由
+├── fetchers.py               # RSS 抓取 + 内容提取
+├── filters.py                # 实体校验 + 漏斗限流
+├── llm_provider.py           # LLM 供应商抽象 (DeepSeek/OpenAI + fallback)
+├── deduplication.py          # Jaccard 语义去重 + LLM 全局聚合
+├── reporters.py              # Markdown 报告 + 钉钉/Notion 推送
+├── metrics.py                # 运行指标收集与监控
+└── validators.py             # Pydantic 配置验证
 
-### Research Pipeline
-
-The platform follows an agentic framework with specialized nodes that process data sequentially:
-
-1. **Research Nodes**:
-   - `CompanyAnalyzer`: Researches core business information
-   - `IndustryAnalyzer`: Analyzes market position and trends
-   - `FinancialAnalyst`: Gathers financial metrics and performance data
-   - `NewsScanner`: Collects recent news and developments
-
-2. **Processing Nodes**:
-   - `Collector`: Aggregates research data from all analyzers
-   - `Curator`: Implements content filtering and relevance scoring
-   - `Briefing`: Generates category-specific summaries using Gemini 2.0 Flash
-   - `Editor`: Compiles and formats the briefings into a final report using GPT-4.1-mini
-
-   ![web ui](<static/agent-flow.png>)
-
-### Content Generation Architecture
-
-The platform leverages separate models for optimal performance:
-
-1. **Gemini 2.0 Flash** (`briefing.py`):
-   - Handles high-context research synthesis tasks
-   - Excels at processing and summarizing large volumes of data
-   - Used for generating initial category briefings
-   - Efficient at maintaining context across multiple documents
-
-2. **GPT-4.1 mini** (`editor.py`):
-   - Specializes in precise formatting and editing tasks
-   - Handles markdown structure and consistency
-   - Superior at following exact formatting instructions
-   - Used for:
-     - Final report compilation
-     - Content deduplication
-     - Markdown formatting
-     - Real-time report streaming
-
-This approach combines Gemini's strength in handling large context windows with GPT-4.1-mini's precision in following specific formatting instructions.
-
-### Content Curation System
-
-The platform uses a content filtering system in `curator.py`:
-
-1. **Relevance Scoring**:
-   - Documents are scored by Tavily's AI-powered search
-   - A minimum threshold (default 0.4) is required to proceed
-   - Scores reflect relevance to the specific research query
-   - Higher scores indicate better matches to the research intent
-
-2. **Document Processing**:
-   - Content is normalized and cleaned
-   - URLs are deduplicated and standardized
-   - Documents are sorted by relevance scores
-   - Real-time progress updates are sent via WebSocket
-
-### Real-Time Communication System
-
-The platform implements a WebSocket-based real-time communication system:
-
-![web ui](<static/ui-2.png>)
-
-1. **Backend Implementation**:
-   - Uses FastAPI's WebSocket support
-   - Maintains persistent connections per research job
-   - Sends structured status updates for various events:
-     ```python
-     await websocket_manager.send_status_update(
-         job_id=job_id,
-         status="processing",
-         message=f"Generating {category} briefing",
-         result={
-             "step": "Briefing",
-             "category": category,
-             "total_docs": len(docs)
-         }
-     )
-     ```
-
-2. **Frontend Integration**:
-   - React components subscribe to WebSocket updates
-   - Updates are processed and displayed in real-time
-   - Different UI components handle specific update types:
-     - Query generation progress
-     - Document curation statistics
-     - Briefing completion status
-     - Report generation progress
-
-3. **Status Types**:
-   - `query_generating`: Real-time query creation updates
-   - `document_kept`: Document curation progress
-   - `briefing_start/complete`: Briefing generation status
-   - `report_chunk`: Streaming report generation
-   - `curation_complete`: Final document statistics
-
-## Setup
-
-### Quick Setup (Recommended)
-
-The easiest way to get started is using the setup script:
-
-1. Clone the repository:
-```bash
-git clone https://github.com/pogjester/tavily-company-research.git
-cd tavily-company-research
+config.yaml                   # 12 企业 + 4 语种 + 6 主题矩阵
+esg_sources.yaml              # 静态 RSS 抓取轨道
+esg_intelligence_agent.py     # 主入口（1765 行，v9 流水线）
 ```
 
-2. Make the setup script executable and run it:
+## 快速开始
+
 ```bash
-chmod +x setup.sh
-./setup.sh
-```
+# 1. 设置环境变量
+export DEEPSEEK_API_KEY="sk-xxx"
+export DINGTALK_WEBHOOK="https://oapi.dingtalk.com/robot/send?access_token=xxx"
 
-The setup script will:
-- Check for required Python and Node.js versions
-- Optionally create a Python virtual environment (recommended)
-- Install all dependencies (Python and Node.js)
-- Guide you through setting up your environment variables
-- Optionally start both backend and frontend servers
-
-You'll need the following API keys ready:
-- Tavily API Key
-- Google Gemini API Key
-- OpenAI API Key
-- MongoDB URI (optional)
-
-### Manual Setup
-
-If you prefer to set up manually, follow these steps:
-
-1. Clone the repository:
-```bash
-git clone https://github.com/pogjester/tavily-company-research.git
-cd tavily-company-research
-```
-
-2. Install backend dependencies:
-```bash
-# Optional: Create and activate virtual environment
-python -m venv .venv
-source .venv/bin/activate
-
-# Install Python dependencies
+# 2. 安装依赖
 pip install -r requirements.txt
+
+# 3. 运行每日舆情监控
+python esg_intelligence_agent.py --mode daily
+
+# 4. 运行每周宏观政策周报
+python esg_intelligence_agent.py --mode weekly --no-push
 ```
 
-3. Install frontend dependencies:
-```bash
-cd ui
-npm install
+## GitHub Actions 自动化
+
+- **每日监控** (UTC 22:00 周一-周六): `.github/workflows/esg_monitor.yml`
+- **每周周报** (UTC 22:00 周四): `.github/workflows/esg_policy_weekly.yml`
+
+## 运行指标
+
+每次运行自动收集并持久化到 `metrics.jsonl`：
+
+```json
+{
+  "supply": {"static": 0, "dynamic": 156, "ai_discovery": 5},
+  "llm": {"batches": 12, "total_tokens": 45000, "cost_usd": 0.008},
+  "output": {"valid_events": 3, "material_events": 1, "final_items": 1}
+}
 ```
 
-4. Create a `.env` file with your API keys:
-```env
-TAVILY_API_KEY=your_tavily_key
-GEMINI_API_KEY=your_gemini_key
-OPENAI_API_KEY=your_openai_key
+## 历史项目
 
-# Optional: Enable MongoDB persistence
-# MONGODB_URI=your_mongodb_connection_string
-```
-
-### Docker Setup
-
-The application can be run using Docker and Docker Compose:
-
-1. Clone the repository:
-```bash
-git clone https://github.com/pogjester/tavily-company-research.git
-cd tavily-company-research
-```
-
-2. Create a `.env` file with your API keys:
-```env
-TAVILY_API_KEY=your_tavily_key
-GEMINI_API_KEY=your_gemini_key
-OPENAI_API_KEY=your_openai_key
-
-# Optional: Enable MongoDB persistence
-# MONGODB_URI=your_mongodb_connection_string
-```
-
-3. Build and start the containers:
-```bash
-docker compose up --build
-```
-
-This will start both the backend and frontend services:
-- Backend API will be available at `http://localhost:8000`
-- Frontend will be available at `http://localhost:5174`
-
-To stop the services:
-```bash
-docker compose down
-```
-
-Note: When updating environment variables in `.env`, you'll need to restart the containers:
-```bash
-docker compose down && docker compose up
-```
-
-### Running the Application
-
-1. Start the backend server (choose one):
-```bash
-# Option 1: Direct Python Module
-python -m application.py
-
-# Option 2: FastAPI with Uvicorn
-uvicorn application:app --reload --port 8000
-```
-
-2. In a new terminal, start the frontend:
-```bash
-cd ui
-npm run dev
-```
-
-3. Access the application at `http://localhost:5173`
-
-## Usage
-
-### Local Development
-
-1. Start the backend server (choose one option):
-
-   **Option 1: Direct Python Module**
-   ```bash
-   python -m application.py
-   ```
-
-   **Option 2: FastAPI with Uvicorn**
-   ```bash
-   # Install uvicorn if not already installed
-   pip install uvicorn
-
-   # Run the FastAPI application with hot reload
-   uvicorn application:app --reload --port 8000
-   ```
-
-   The backend will be available at:
-   - API Endpoint: `http://localhost:8000`
-   - WebSocket Endpoint: `ws://localhost:8000/research/ws/{job_id}`
-
-2. Start the frontend development server:
-   ```bash
-   cd ui
-   npm run dev
-   ```
-
-3. Access the application at `http://localhost:5173`
-
-### Deployment Options
-
-The application can be deployed to various cloud platforms. Here are some common options:
-
-#### AWS Elastic Beanstalk
-
-1. Install the EB CLI:
-   ```bash
-   pip install awsebcli
-   ```
-
-2. Initialize EB application:
-   ```bash
-   eb init -p python-3.11 tavily-research
-   ```
-
-3. Create and deploy:
-   ```bash
-   eb create tavily-research-prod
-   ```
-
-#### Other Deployment Options
-
-- **Docker**: The application includes a Dockerfile for containerized deployment
-- **Heroku**: Deploy directly from GitHub with the Python buildpack
-- **Google Cloud Run**: Suitable for containerized deployment with automatic scaling
-
-Choose the platform that best suits your needs. The application is platform-agnostic and can be hosted anywhere that supports Python web applications.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+本项目源自一个多 Agent 公司研究工具（Tavily + Gemini + GPT-4.1）。该代码已归档到 `deprecated/old-company-research/`。
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [Tavily](https://tavily.com/) for the research API
-- All other open-source libraries and their contributors
+MIT

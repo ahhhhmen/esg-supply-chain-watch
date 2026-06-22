@@ -21,30 +21,37 @@ v9 升级
 """
 
 import argparse
-import html
 import json
 import logging
 import os
 import re
-import sys
 import time
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime as email_parse_date
 from pathlib import Path
 from typing import Optional
-from urllib.parse import quote, unquote, parse_qs, urlparse
 
 import pandas as pd
 import requests
-import yaml
-from bs4 import BeautifulSoup
-from openai import OpenAI
 from notion_client import Client as NotionClient
 
 from sourcing_engine import SourcingEngine
 from backend.utils.references import clean_title, normalize_url, extract_domain_name
 from notion_upsert import upsert_notion_page
+
+# ── 从 esg_agent 模块导入已迁移的类和工具 ──────────────────
+from esg_agent.config import (
+    AgentConfig, QueryItem, NewsArticle,
+    FETCH_HEADERS, DINGTALK_WEBHOOK_URL,
+    _GEO_CN_LANGS,
+)
+from esg_agent.fetchers import (
+    ContentExtractor, NewsFetcher, resolve_news_url, strip_html,
+)
+from esg_agent.filters import EntityFilter
+from esg_agent.deduplication import JaccardMerger, LLMGlobalConvergence
+from esg_agent.reporters import MarkdownReportWriter
+from esg_agent.llm_provider import create_provider, BaseLLMProvider, TokenUsage
 
 # ─────────────────────────────────────────────────────────
 # 日志
@@ -57,253 +64,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("esg_agent")
 
-# ─────────────────────────────────────────────────────────
-# 常量
-# ─────────────────────────────────────────────────────────
+# 常量已迁移至 esg_agent.config 模块，此处通过 import 引用
 
-# 中文轨道使用 name_zh 搜索，其他轨道使用 name_en
-_GEO_CN_LANGS = {"zh-CN"}
+# Utility functions & classes below have been migrated to:
+#   esg_agent.fetchers  (strip_html, ContentExtractor, NewsFetcher, resolve_news_url)
+#   esg_agent.filters   (EntityFilter)
+#   esg_agent.reporters (MarkdownReportWriter)
 
-FETCH_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-}
-
-# ── 钉钉系统报警 Webhook ────────────────────────────────
-# 填写真实 Webhook URL 后生效，为空时仅在控制台打印 ERROR 日志
-DINGTALK_WEBHOOK_URL = ""
-
-# ── Notion 集成配置 ──────────────────────────────────────
-NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
-NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID", "")
-
-
-# ─────────────────────────────────────────────────────────
-# 数据模型
-# ─────────────────────────────────────────────────────────
-
-@dataclass
-class QueryItem:
-    """单条搜索任务（v9：基于 URL 模板 + 双频主题关键词）"""
-    url: str                 # 完整 RSS 请求 URL
-    company_name_zh: str     # 搜索时对应的企业中文名
-    company_name_en: str     # 搜索时对应的企业英文名
-    track_label: str         # 轨道标签
-    lang: str                # 语言标签
-    topic_category: str      # 主题类别（如 "劳工权益与罢工"）
-
-
-@dataclass
-class NewsArticle:
-    title: str = ""
-    date: str = ""
-    source: str = ""
-    url: str = ""
-    description: str = ""
-    company_name_zh: str = ""
-    company_name_en: str = ""
-    track_label: str = ""
-    lang: str = ""
-    topic_category: str = ""
-    parsed_date: Optional[datetime] = None
-    raw_summary: str = ""
-
-
-@dataclass
-class AgentConfig:
-    """
-    v9 双频矩阵式配置。
-
-    从 config.yaml 解析：
-      - companies: list[dict]  企业名单
-      - intelligence_tracks:   三大抓取轨道
-      - topics:                双频主题矩阵 (daily / weekly)
-      - days_limit: int        时间窗口
-    """
-    companies: list[dict] = field(default_factory=list)
-    geographical_tracks: list[dict] = field(default_factory=list)
-    premium_company_tracks: list[dict] = field(default_factory=list)
-    premium_global_tracks: list[dict] = field(default_factory=list)
-    daily_topics: list[dict] = field(default_factory=list)
-    weekly_topics: list[dict] = field(default_factory=list)
-    days_limit: int = 14
-
-    # ── 工厂方法 ──────────────────────────────────────────
-
-    @classmethod
-    def from_yaml(cls, path: str = None) -> "AgentConfig":
-        if path is None:
-            path = str(Path(__file__).parent / "config.yaml")
-        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-        tracks = raw.get("intelligence_tracks", {})
-        topics = raw.get("topics", {})
-        return cls(
-            companies=raw.get("companies", []),
-            geographical_tracks=tracks.get("geographical_tracks", []),
-            premium_company_tracks=tracks.get("premium_company_tracks", []),
-            premium_global_tracks=tracks.get("premium_global_tracks", []),
-            daily_topics=topics.get("daily", []),
-            weekly_topics=topics.get("weekly", []),
-            days_limit=raw.get("days_limit", 14),
-        )
-
-    # ── 企业显示名 ──────────────────────────────────────
-
-    def get_company_display_name(self, company: dict) -> str:
-        zh = company.get("name_zh", "")
-        en = company.get("name_en", "")
-        return f"{zh} | {en}" if zh and en else (zh or en)
-
-    def get_all_company_display_names(self) -> list[str]:
-        return [self.get_company_display_name(c) for c in self.companies]
-
-    # ── 主题关键词辅助方法 ──────────────────────────────
-
-    @staticmethod
-    def _get_keywords_for_lang(topic: dict, lang: str) -> list[str]:
-        """从 topic 的 keywords 字典中获取指定语种的关键词列表。"""
-        kw = topic.get("keywords", {})
-        return kw.get(lang, []) or kw.get("en-US", [])
-
-    @staticmethod
-    def _build_keyword_query(keywords: list[str]) -> str:
-        """将关键词列表组装为 OR 查询片段，如: ("strike" OR "labor" OR ...)。"""
-        if not keywords:
-            return ""
-        if len(keywords) == 1:
-            return f'"{keywords[0]}"'
-        parts = [f'"{kw}"' for kw in keywords]
-        return "(" + " OR ".join(parts) + ")"
-
-    # ── 查询任务构建（双频动态路由） ──────────────────────
-
-    def build_query_tasks(self, mode: str = "daily") -> list["QueryItem"]:
-        """
-        按 mode 参数生成 QueryItem 列表：
-
-        mode=daily:
-          - 轨道 1（地缘通用轨）：每企业 × 每语种 × 每日主题关键词
-          - 轨道 2（BHRRC 定向）：每企业定向抓取
-          - 跳过轨道 3（EFRAG 宏观政策）
-
-        mode=weekly:
-          - 轨道 1（地缘通用轨）：每企业 × 每语种 × (每日 + 周报) 主题关键词
-          - 轨道 2（BHRRC 定向）：每企业定向抓取
-          - 轨道 3（EFRAG 宏观政策）：全局抓取
-        """
-        items: list[QueryItem] = []
-
-        # 确定主题集
-        if mode == "weekly":
-            active_topics = self.daily_topics + self.weekly_topics
-        else:
-            active_topics = self.daily_topics
-
-        logger.info(
-            f"Building query tasks for mode={mode}: "
-            f"{len(active_topics)} topics, {len(self.companies)} companies, "
-            f"{len(self.geographical_tracks)} geo tracks"
-        )
-
-        # ── 轨道 1：地缘多语种通用新闻网（公司 + 主题关键词） ──
-        for company in self.companies:
-            name_zh = company.get("name_zh", "")
-            name_en = company.get("name_en", "")
-
-            for geo in self.geographical_tracks:
-                lang = geo.get("lang", "en-US")
-                url_template = geo.get("url_template", "")
-                lang_label = geo.get("lang_label", lang)
-                if not url_template:
-                    continue
-
-                # 选择对应语言的公司名
-                search_term = name_zh if lang in _GEO_CN_LANGS else name_en
-                if not search_term:
-                    continue
-
-                # 收集该语言下所有主题的关键词
-                for topic in active_topics:
-                    category = topic.get("category", "")
-                    keywords = self._get_keywords_for_lang(topic, lang)
-                    if not keywords:
-                        continue
-
-                    kw_query = self._build_keyword_query(keywords)
-                    # 组装完整查询: "公司名" (关键词1 OR 关键词2 ...) when:14d
-                    full_query = f'"{search_term}" {kw_query} when:14d'
-                    query_encoded = quote(full_query)
-                    final_url = url_template.replace("{query}", query_encoded)
-
-                    items.append(QueryItem(
-                        url=final_url,
-                        company_name_zh=name_zh,
-                        company_name_en=name_en,
-                        track_label=f"地理新闻 ({lang_label})",
-                        lang=lang,
-                        topic_category=category,
-                    ))
-
-        # ── 轨道 2：定向高风险机构预警（BHRRC） ───────────
-        for company in self.companies:
-            for pt in self.premium_company_tracks:
-                url_template = pt.get("url_template", "")
-                name_field = pt.get("company_name_field", "name_en")
-                company_name_val = company.get(name_field, "")
-                track_label = pt.get("track_label", pt.get("source", "预警"))
-                if not company_name_val or not url_template:
-                    continue
-                final_url = url_template.replace("{company_name}", quote(company_name_val))
-                items.append(QueryItem(
-                    url=final_url,
-                    company_name_zh=company.get("name_zh", ""),
-                    company_name_en=company.get("name_en", ""),
-                    track_label=track_label,
-                    lang="en-US",
-                    topic_category="机构预警",
-                ))
-
-        # ── 轨道 3：全球宏观合规政策前沿（仅 weekly） ────
-        if mode == "weekly":
-            for pt in self.premium_global_tracks:
-                url = pt.get("url", "")
-                track_label = pt.get("track_label", pt.get("source", "政策前沿"))
-                if not url:
-                    continue
-                items.append(QueryItem(
-                    url=url,
-                    company_name_zh="",
-                    company_name_en="",
-                    track_label=track_label,
-                    lang="en-US",
-                    topic_category="宏观政策",
-                ))
-            logger.info(f"  Weekly mode: enabled {len(self.premium_global_tracks)} premium global track(s)")
-        else:
-            logger.info("  Daily mode: skipping premium global tracks (EFRAG)")
-
-        logger.info(f"Total query tasks generated: {len(items)}")
-        return items
-
-
-# ─────────────────────────────────────────────────────────
-# 工具函数
-# ─────────────────────────────────────────────────────────
-
-def strip_html(raw: str) -> str:
-    if not raw:
-        return ""
-    unescaped = html.unescape(raw)
-    try:
-        text = BeautifulSoup(unescaped, "html.parser").get_text(separator=" ", strip=True)
-    except Exception:
-        text = re.sub(r"<[^>]+>", "", unescaped)
-    text = re.sub(r"&[a-zA-Z]+;", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
-
+# ═══ RETAINED (used by ESGIntelligenceAgent) ═══
 
 def parse_rss_date(date_str: str) -> Optional[datetime]:
     if not date_str:
@@ -329,427 +97,6 @@ def fmt_date(raw) -> str:
 
 
 # ─────────────────────────────────────────────────────────
-# 实体出现校验器
-# ─────────────────────────────────────────────────────────
-
-class EntityFilter:
-    """
-    验证新闻标题或正文摘要中是否真实出现目标公司名称。
-
-    Regex 边界匹配 + 智能大小写敏感策略 + CJK 专项处理
-    """
-
-    _PATTERN_CACHE: dict[str, re.Pattern] = {}
-    _CJK_RE = re.compile(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
-
-    @classmethod
-    def _is_strict_case(cls, alias: str) -> bool:
-        return alias.isupper() and alias.isascii() and len(alias) <= 5
-
-    @classmethod
-    def _has_cjk(cls, alias: str) -> bool:
-        return bool(cls._CJK_RE.search(alias))
-
-    @classmethod
-    def _build_pattern(cls, alias: str) -> re.Pattern:
-        is_cjk = cls._has_cjk(alias)
-        is_strict = (not is_cjk) and cls._is_strict_case(alias)
-        cache_key = f"{alias}|{int(is_strict)}|{int(is_cjk)}"
-
-        if cache_key not in cls._PATTERN_CACHE:
-            escaped = re.escape(alias)
-            if is_cjk:
-                pattern = re.compile(escaped, re.IGNORECASE)
-            elif is_strict:
-                pattern = re.compile(r"\b" + escaped + r"\b")
-            else:
-                pattern = re.compile(r"\b" + escaped + r"\b", re.IGNORECASE)
-            cls._PATTERN_CACHE[cache_key] = pattern
-
-        return cls._PATTERN_CACHE[cache_key]
-
-    @classmethod
-    def _match(cls, alias: str, haystack: str) -> bool:
-        if not alias:
-            return False
-        return bool(cls._build_pattern(alias).search(haystack))
-
-    @classmethod
-    def passes(cls, article: "NewsArticle", name_zh: str, name_en: str) -> bool:
-        haystack = article.title + " " + article.raw_summary
-        return cls._match(name_zh, haystack) or cls._match(name_en, haystack)
-
-
-# ─────────────────────────────────────────────────────────
-# 内容提取器
-# ─────────────────────────────────────────────────────────
-
-class ContentExtractor:
-    """向新闻原始 URL 发送 GET 请求，提取正文前 200 字纯文本。"""
-
-    TIMEOUT = 5
-    MAX_CHARS = 200
-    _SEMANTIC_RE = re.compile(r"article|content|post|story|body|main", re.I)
-
-    @classmethod
-    def extract(cls, url: str) -> str:
-        real_url = cls._unwrap_redirect(url)
-        try:
-            resp = requests.get(
-                real_url, headers=FETCH_HEADERS, timeout=cls.TIMEOUT, allow_redirects=True,
-            )
-            if resp.status_code != 200:
-                return ""
-            return cls._parse_body(resp.text)
-        except Exception as exc:
-            logger.debug(f"ContentExtractor failed [{real_url[:70]}]: {exc}")
-            return ""
-
-    @classmethod
-    def _unwrap_redirect(cls, url: str) -> str:
-        if "apiclick.aspx" in url:
-            qs = parse_qs(urlparse(url).query)
-            inner = qs.get("url", [None])[0]
-            if inner:
-                return unquote(inner)
-        return url
-
-    @classmethod
-    def _parse_body(cls, html_text: str) -> str:
-        soup = BeautifulSoup(html_text, "html.parser")
-        for noise in soup.find_all(["script", "style", "nav", "footer", "header", "aside", "noscript"]):
-            noise.decompose()
-        container = (
-            soup.find("article")
-            or soup.find(["div", "section", "main"], class_=cls._SEMANTIC_RE)
-            or soup.find(["div", "section", "main"], id=cls._SEMANTIC_RE)
-            or soup
-        )
-        return cls._collect_paragraphs(container)
-
-    @classmethod
-    def _collect_paragraphs(cls, container) -> str:
-        paragraphs = container.find_all("p")
-        texts: list[str] = []
-        total = 0
-        for p in paragraphs:
-            t = re.sub(r"\s+", " ", p.get_text(separator=" ", strip=True)).strip()
-            if len(t) > 15:
-                texts.append(t)
-                total += len(t)
-            if total >= cls.MAX_CHARS:
-                break
-        return " ".join(texts)[:cls.MAX_CHARS]
-
-
-# ─────────────────────────────────────────────────────────
-# RSS 抓取器
-# ─────────────────────────────────────────────────────────
-
-# ─────────────────────────────────────────────────────────
-# URL 解密还原：Google News → 真实源站直链
-# ─────────────────────────────────────────────────────────
-
-def resolve_news_url(url: str, timeout: int = 5) -> str:
-    """将 Google News 重定向链接还原为源站直链。
-
-    策略（v3 — requests.head 轻量解析）：
-    1. 非 Google News 链接直接原样返回。
-    2. 使用 HEAD + allow_redirects 跟随完整重定向链，获取最终真实 URL。
-    3. 校验：最终 URL 必须与原始 URL 不同、不含 google.com、以 http 开头。
-    4. 超时/网络异常时回退到原始链接。
-    """
-    if not url or "news.google.com" not in url:
-        return url
-    try:
-        resp = requests.head(
-            url,
-            headers=FETCH_HEADERS,
-            allow_redirects=True,
-            timeout=timeout,
-        )
-        final_url = resp.url
-        if (
-            final_url != url
-            and "google.com" not in final_url
-            and len(final_url) > 15
-            and final_url.lower().startswith("http")
-        ):
-            logger.debug(f"URL resolved: {url[:60]}... -> {final_url[:80]}...")
-            return final_url
-        else:
-            logger.debug(f"URL NOT resolved (no redirect): {url[:60]}...")
-    except Exception as exc:
-        logger.debug(f"URL resolution failed [{url[:60]}...]: {exc}")
-    return url
-
-
-class NewsFetcher:
-    """v9 统一 RSS 抓取器。"""
-
-    TIMEOUT = 20
-    MAX_RESULTS = 8
-
-    @classmethod
-    def fetch(cls, url: str) -> list[dict]:
-        articles: list[dict] = []
-        try:
-            resp = requests.get(url, headers=FETCH_HEADERS, timeout=cls.TIMEOUT)
-            if resp.status_code != 200:
-                logger.debug(f"RSS fetch returned {resp.status_code}: {url[:80]}")
-                return articles
-            for item_xml in re.findall(r"<item>(.*?)</item>", resp.text, re.DOTALL)[:cls.MAX_RESULTS]:
-                parsed = cls._parse_item(item_xml)
-                if parsed:
-                    parsed["description"] = strip_html(parsed.get("description", ""))
-                    # 将 Google News 加密链接还原为源站直链
-                    parsed["url"] = resolve_news_url(parsed["url"])
-                    articles.append(parsed)
-        except Exception as exc:
-            logger.debug(f"RSS fetch failed [{url[:60]}]: {exc}")
-        return articles
-
-    @staticmethod
-    def _parse_item(item_xml: str) -> Optional[dict]:
-        t  = re.search(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>", item_xml)
-        l  = re.search(r"<link>(.*?)</link>", item_xml)
-        d  = re.search(r"<pubDate>(.*?)</pubDate>", item_xml)
-        de = re.search(r"<description>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</description>", item_xml)
-        s  = re.search(r'<source[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</source>', item_xml)
-
-        title = (t.group(1) if t else "").strip()
-        link  = (l.group(1) if l else "").strip()
-        if not title or not link:
-            return None
-
-        return {
-            "title":       title,
-            "date":        (d.group(1) if d else "").strip(),
-            "source":      (s.group(1) if s else "Unknown").strip(),
-            "url":         link,
-            "description": (de.group(1) if de else "").strip(),
-        }
-
-
-# ─────────────────────────────────────────────────────────
-# Markdown 报告生成器
-# ─────────────────────────────────────────────────────────
-
-class MarkdownReportWriter:
-    """
-    层级结构（v9 — 按风险标签聚合）：
-      ### 【供应链断裂预警】
-        > **[企业名称]** — {title}
-        > 💡 **高管洞察**: {insight}
-        > 📅 {date} 📰 {source} 🔗 [阅读原文]({url})
-        > ---
-    """
-
-    # 高管阅读优先级排序 — 数值越小优先级越高
-    TAG_PRIORITY: dict[str, int] = {
-        "【供应链断裂预警】": 1,
-        "【地缘政治预警】":   2,
-        "【市场准入预警】":   3,
-        "【政策前沿】":       4,
-        "【机构预警】":       5,
-    }
-    FALLBACK_TAG = "【日常运营风险】"
-
-    def __init__(self, intelligence_data: list[dict], config: Optional[AgentConfig] = None, mode: str = "daily"):
-        self.data = intelligence_data or []
-        self.config = config
-        self.mode = mode
-        self.df = pd.DataFrame(self.data) if self.data else pd.DataFrame()
-
-    # ── 标签聚合辅助 ──────────────────────────────────
-
-    @classmethod
-    def _extract_tags(cls, row) -> list[str]:
-        """从一行数据中提取 tags 列表，兼容数组和字符串格式。"""
-        tags_val = row.get("tags", row.get("tag", ""))
-        if isinstance(tags_val, list):
-            return [str(t).strip() for t in tags_val if str(t).strip()]
-        if isinstance(tags_val, str) and tags_val.strip():
-            # 空格或逗号分隔
-            return [t.strip() for t in re.split(r"[,\s]+", tags_val) if t.strip()]
-        return []
-
-    @classmethod
-    def _assign_primary_tag(cls, tags: list[str]) -> str:
-        """从多个标签中选择优先级最高的一个作为主标签。无匹配则归入日常运营风险。"""
-        best_tag = cls.FALLBACK_TAG
-        best_priority = 999
-        for t in tags:
-            p = cls.TAG_PRIORITY.get(t, 999)
-            if p < best_priority:
-                best_priority = p
-                best_tag = t
-        return best_tag
-
-    @classmethod
-    def _build_tag_groups(cls, df: pd.DataFrame) -> dict[str, pd.DataFrame]:
-        """
-        将 DataFrame 按主标签分组。
-        每条情报只归入一个最高优先级的标签组。无标签 → 日常运营风险。
-        返回 {tag_name: subset_df}，按优先级排序。
-        """
-        # 为每行计算主标签
-        primary_tags = df.apply(lambda row: cls._assign_primary_tag(cls._extract_tags(row)), axis=1)
-        df = df.copy()
-        df["_primary_tag"] = primary_tags
-
-        groups: dict[str, pd.DataFrame] = {}
-        for tag in df["_primary_tag"].unique():
-            groups[tag] = df[df["_primary_tag"] == tag]
-
-        # 按优先级排序
-        def sort_key(item: tuple[str, pd.DataFrame]) -> int:
-            return cls.TAG_PRIORITY.get(item[0], 999)
-        return dict(sorted(groups.items(), key=sort_key))
-
-    # ── 动态标题 ──────────────────────────────────────
-
-    def _get_report_title(self) -> str:
-        if self.mode == "weekly":
-            return "🏛️ ESG 全球地缘与合规周报 (Weekly Strategy Insight)"
-        return "📊 ESG 全球供应链动态日报 (Daily Risk Radar)"
-
-    # ── 生成入口 ──────────────────────────────────────
-
-    def generate(self, path: str = "esg_global_report.md") -> None:
-        if self.df.empty or "company" not in self.df.columns:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            title = self._get_report_title()
-            Path(path).write_text(
-                f"# {title}\n\n"
-                f"> 📅 **生成时间**: {now}\n\n"
-                f"> 今日未监测到相关有效情报。\n\n"
-                f"> 🤖 *本报告由 ESG Intelligence Agent 驱动，经 DeepSeek 大模型进行实体消歧与智能摘要。*\n",
-                encoding="utf-8",
-            )
-            logger.info(f"Empty report written to {path}")
-            return
-
-        lines = self._build_report()
-        Path(path).write_text("\n".join(lines), encoding="utf-8")
-        logger.info(f"Report saved: {path} ({len(self.df)} intelligence items)")
-
-    def _build_report(self) -> list[str]:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        total = len(self.df)
-        firms = self.df["company"].nunique() if "company" in self.df.columns else 0
-
-        dates = pd.to_datetime(self.df.get("date", pd.Series(dtype=str)), errors="coerce")
-        dmin = dates.min().strftime("%Y-%m-%d") if dates.notna().any() else "?"
-        dmax = dates.max().strftime("%Y-%m-%d") if dates.notna().any() else "?"
-
-        tag_groups = self._build_tag_groups(self.df)
-        tag_count = len(tag_groups)
-
-        title = self._get_report_title()
-        lines: list[str] = [
-            f"# {title}",
-            "",
-            f"> 📅 **生成时间**: {now}",
-            f"> 📊 **情报总数**: {total} 条 | 企业: {firms} 家 | 风险标签: {tag_count} 类",
-            f"> 📆 **覆盖时段**: {dmin} ~ {dmax}",
-            "",
-            "---",
-            "",
-            "## 📑 目录",
-            "",
-        ]
-
-        for tag, sub_df in tag_groups.items():
-            count = len(sub_df)
-            lines.append(f"- **{tag}**（{count} 条）")
-            for company in sorted(sub_df["company"].unique()):
-                co_count = len(sub_df[sub_df["company"] == company])
-                lines.append(f"  - {company}: {co_count} 条")
-            lines.append("")
-
-        lines += ["---", ""]
-
-        for tag, sub_df in tag_groups.items():
-            sub_df = sub_df.copy()
-            sub_df["_sort_dt"] = pd.to_datetime(sub_df.get("date", pd.Series(dtype=str)), errors="coerce")
-            sub_df = sub_df.sort_values("_sort_dt", ascending=False, na_position="last")
-
-            lines.append(f"### {tag}")
-            lines.append(f"> 共 {len(sub_df)} 篇情报")
-            lines.append("")
-
-            for _, row in sub_df.iterrows():
-                lines.extend(self._render_item(row))
-
-            lines += ["---", ""]
-
-        lines += [
-            "🤖 *本报告由 ESG Intelligence Agent 驱动，经 DeepSeek 大模型进行实体消歧与智能摘要。*",
-            "⚠️  *数据来源为公开 RSS 新闻源，仅供决策参考，不构成投资或法律建议。*",
-        ]
-        return lines
-
-    # URL 安全常量
-    _SAFE_URL_FALLBACK = "https://news.google.com"
-
-    @classmethod
-    def _sanitize_url(cls, url: str) -> str:
-        """校验 URL 安全性：不以 http 开头或长度异常 → 回退到 Google News 主页。"""
-        if not url:
-            return cls._SAFE_URL_FALLBACK
-        url = url.strip()
-        if not url.lower().startswith("http"):
-            return cls._SAFE_URL_FALLBACK
-        if len(url) < 12:
-            return cls._SAFE_URL_FALLBACK
-        return url
-
-    @staticmethod
-    def _render_item(row: pd.Series) -> list[str]:
-        company = str(row.get("company", "")).strip()
-        title   = str(row.get("title", row.get("title_cn", ""))).strip()
-        url     = str(row.get("url", "")).strip()
-        insight = str(row.get("insight", "")).strip()
-        source  = str(row.get("source", "Unknown"))[:50].strip()
-        date_s  = str(row.get("date", ""))[:10]
-
-        # URL 安全过滤：防止非法字符串导致钉钉端无法点击
-        url = MarkdownReportWriter._sanitize_url(url)
-
-        parts: list[str] = []
-
-        # Line 1: Company + Title (bold header — 钉钉适配：双换行分割)
-        if company and title:
-            parts.append(f"**{company}** | {title}\n\n")
-        elif company:
-            parts.append(f"**{company}**\n\n")
-        elif title:
-            parts.append(f"**{title}**\n\n")
-
-        # Line 2: Executive Insight
-        if insight:
-            parts.append(f"💡 **高管洞察**：{insight}\n\n")
-
-        # Line 3: Meta bar (date | source | link) in italic
-        meta_segments = []
-        if date_s:
-            meta_segments.append(f"📅 {date_s}")
-        if source:
-            meta_segments.append(f"📰 {source}")
-        if url:
-            meta_segments.append(f"🔗 [阅读原文]({url})")
-        if meta_segments:
-            # 钉钉 italics: use *text* wrapping + double-spaces between segments
-            meta_line = "   |   ".join(meta_segments)
-            parts.append(f"*{meta_line}*\n\n")
-
-        # Separator
-        parts.append("---\n\n")
-        return parts
-
-
-# ─────────────────────────────────────────────────────────
 # 智能体主控
 # ─────────────────────────────────────────────────────────
 
@@ -764,8 +111,9 @@ class ESGIntelligenceAgent:
       Phase 5   — Markdown 报告生成
     """
 
-    DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-    DEEPSEEK_MODEL    = "deepseek-chat"
+    # LLM 供应商（实例级，在 __init__ 中初始化）
+    _llm: Optional["BaseLLMProvider"] = None
+    _llm_usage: "TokenUsage" = None  # type: ignore[assignment]
 
     # ── 钉钉推送格式化常量 ──────────────────────────────────
     CATEGORY_EMOJI_MAP: dict[str, str] = {
@@ -790,60 +138,41 @@ class ESGIntelligenceAgent:
         "机构与声誉预警": "NGO指控、人权机构质询、评级下调等尚未演变为实质停产的高声誉风险事件",
     }
 
-    # DeepSeek 定价 (USD per 1M tokens)
-    _PRICE_INPUT_PER_1M  = 0.14   # $0.14 / 1M input tokens
-    _PRICE_OUTPUT_PER_1M = 0.28   # $0.28 / 1M output tokens
+    # ── LLM 调用辅助 ──────────────────────────────────────
 
-    # Token 消耗追踪（实例级，每次 run() 重置）
-    _token_stats: dict = {
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "total_tokens": 0,
-        "total_cost_usd": 0.0,
-    }
-
-    @classmethod
-    def _accumulate_tokens(cls, usage) -> None:
-        """从 OpenAI response.usage 累积 token 统计。"""
-        if usage is None:
-            return
+    def _call_llm(
+        self,
+        system_prompt: str,
+        user_message: str,
+        temperature: float = 0.1,
+        max_tokens: int = 8192,
+        response_format: Optional[dict] = None,
+    ) -> Optional[str]:
+        """统一 LLM 调用入口，处理 provider fallback 和 usage 累积。"""
+        if self._llm is None:
+            try:
+                self._llm = create_provider()
+                logger.info(f"LLM provider initialized: {self._llm.name}")
+            except RuntimeError as e:
+                logger.error(f"LLM provider init failed: {e}")
+                return None
         try:
-            prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
-            completion = int(getattr(usage, "completion_tokens", 0) or 0)
-            total = int(getattr(usage, "total_tokens", 0) or 0) or (prompt + completion)
-        except (TypeError, ValueError):
-            return
+            content, usage = self._llm.complete(
+                system_prompt, user_message, temperature, max_tokens, response_format,
+            )
+            self._llm_usage = self._llm_usage + usage
+            return content
+        except Exception as e:
+            logger.warning(f"LLM call failed ({self._llm.name}): {e}")
+            return None
 
-        cls._token_stats["prompt_tokens"] += prompt
-        cls._token_stats["completion_tokens"] += completion
-        cls._token_stats["total_tokens"] += total
-        cls._token_stats["total_cost_usd"] += (
-            prompt * cls._PRICE_INPUT_PER_1M / 1_000_000
-            + completion * cls._PRICE_OUTPUT_PER_1M / 1_000_000
-        )
-
-    @classmethod
-    def _log_token_summary(cls) -> str:
-        """输出 token 消耗日志，返回可用于报告底部的摘要字符串。"""
-        s = cls._token_stats
-        summary = (
-            f"💰 Token 消耗: "
-            f"输入 {s['prompt_tokens']:,} + 输出 {s['completion_tokens']:,} "
-            f"= {s['total_tokens']:,} tokens | "
-            f"预估费用 ${s['total_cost_usd']:.4f}"
-        )
+    def _log_token_summary(self) -> str:
+        summary = f"💰 Token 消耗: {self._llm_usage.summary()}"
         logger.info(summary)
         return summary
 
-    @classmethod
-    def _reset_token_stats(cls) -> None:
-        """每次 run() 开始时重置统计。"""
-        cls._token_stats = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "total_cost_usd": 0.0,
-        }
+    def _reset_token_stats(self) -> None:
+        self._llm_usage = TokenUsage()
 
     @classmethod
     def _build_system_prompt(cls, company_names: list[str], mode: str) -> str:
@@ -966,8 +295,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
     # 分批处理常量：每批最多发送的文章数
     BATCH_SIZE = 15
 
-    @classmethod
-    def _generate_ai_discovery_queries(cls, mode: str, company_names: list[str]) -> list[str]:
+    def _generate_ai_discovery_queries(self, mode: str, company_names: list[str]) -> list[str]:
         """Phase 0.5: 让 AI 生成当日动态搜索词，填补静态关键词矩阵盲区。
 
         向 DeepSeek 发送专用 prompt，基于当前监控目标、风险类别和历史漏报教训，
@@ -977,13 +305,9 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             搜索查询字符串列表（未编码的原始查询）。
             失败时返回空列表，不阻断主流程。
         """
-        api_key = os.environ.get("DEEPSEEK_API_KEY")
-        if not api_key:
-            logger.info("[AI发现] DEEPSEEK_API_KEY 未设置，跳过动态查询生成")
-            return []
 
         companies_str = "\n".join(f"  - {name}" for name in company_names)
-        mode_label = "daily（劳工权益、环境污染、社区冲突）" if mode == "daily" else "weekly（覆盖全部 6 类风险主题：劳工、环境、社区、欧盟准入、美国地缘封锁、资源国民族主义）"
+        mode_label = "daily（劳工权益）" if mode == "daily" else "weekly（覆盖全部 6 类风险主题）"
 
         system_prompt = f"""你是一个 ESG 供应链风险情报分析师。你负责为一套自动化监控系统生成每日补充搜索词。
 
@@ -1016,19 +340,13 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         user_message = f"今天是 {today_str}。请基于当前监控矩阵和盲区教训，生成今日补充搜索查询。"
 
         try:
-            client = OpenAI(api_key=api_key, base_url=cls.DEEPSEEK_BASE_URL)
-            response = client.chat.completions.create(
-                model=cls.DEEPSEEK_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
+            raw = self._call_llm(
+                system_prompt, user_message,
+                temperature=0.3, max_tokens=1024,
                 response_format={"type": "json_object"},
-                temperature=0.3,
-                max_tokens=1024,
             )
-            cls._accumulate_tokens(response.usage)
-            raw = response.choices[0].message.content or ""
+            if raw is None:
+                return []
 
             # 解析 JSON
             try:
@@ -1058,9 +376,8 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             logger.warning(f"[AI发现] 查询生成失败 ({type(e).__name__}: {e})，回退到静态矩阵")
             return []
 
-    @classmethod
     def _weekly_threat_landscape_review(
-        cls, events: list[dict], report_path: str, token_summary: str
+        self, events: list[dict], report_path: str, token_summary: str
     ) -> None:
         """Phase 6 (weekly only): LLM 分析本周监控盲区，追加到周报末尾。
 
@@ -1071,10 +388,6 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 
         输出追加到周报文件末尾作为「🔍 监控矩阵盲区分析」章节。
         """
-        api_key = os.environ.get("DEEPSEEK_API_KEY")
-        if not api_key:
-            logger.info("[周度审查] DEEPSEEK_API_KEY 未设置，跳过威胁态势审查")
-            return
 
         if not events:
             placeholder = "\n\n---\n\n## 🔍 监控矩阵盲区分析\n\n本周未捕获风险事件，无法进行态势审查。\n"
@@ -1110,18 +423,12 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         user_message = f"以下是本周捕获的风险事件（共 {len(events)} 条，展示前 {min(len(events), 50)} 条）:\n\n{events_text}"
 
         try:
-            client = OpenAI(api_key=api_key, base_url=cls.DEEPSEEK_BASE_URL)
-            response = client.chat.completions.create(
-                model=cls.DEEPSEEK_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-                temperature=0.2,
-                max_tokens=2048,
+            analysis = self._call_llm(
+                system_prompt, user_message,
+                temperature=0.2, max_tokens=2048,
             )
-            cls._accumulate_tokens(response.usage)
-            analysis = response.choices[0].message.content or ""
+            if analysis is None:
+                return None
 
             # 追加到周报文件
             section = f"\n\n---\n\n## 🔍 监控矩阵盲区分析\n\n{analysis}\n"
@@ -1670,50 +977,26 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                     s["url"] = cls._unwrap_google_news_url(src_url)
         return event
 
-    @classmethod
-    def _llm_global_convergence(cls, valid_events: list[dict]) -> list[dict]:
-        """终极 LLM 全局聚合层 — 解决跨批次 Semantic Drift 导致的假性重复。
-
-        当 Python Jaccard 去重后仍有 ≤10 条 valid_events 时，
-        将全部事件一次性喂给 LLM，由其执行语义级别的全局去重合并。
-        输出保持与 valid_events 相同的结构。
-        调用失败时安全回退，返回原始列表。
-        """
+    def _llm_global_convergence(self, valid_events: list[dict]) -> list[dict]:
+        """终极 LLM 全局聚合层 — 解决跨批次 Semantic Drift 导致的假性重复。"""
         if not valid_events or len(valid_events) <= 1:
             return valid_events
 
-        api_key = os.environ.get("DEEPSEEK_API_KEY")
-        if not api_key:
-            logger.warning("[LLM全局聚合] DEEPSEEK_API_KEY 未设置，跳过全局聚合")
-            return valid_events
-
-        # 构建输入 JSON
         events_json = json.dumps(valid_events, ensure_ascii=False, indent=2)
-
-        system_msg = """你是一个事件去重引擎。你会收到一组已通过技术降噪的 valid_events。
-你的任务是：将描述同一核心商业/地缘事件的条目彻底合并为一条。
-合并规则：
-1. 合并时提炼出一个最精准、专业的 display_title_zh（中文标题）。
-2. 将所有相关媒体名称和 URL 合并到 sources 数组中，保留 original_language 标签，去重。
-3. 保留最新的 date、最完整的 executive_insight。
-4. 输出格式必须与输入完全一致（数组），不得添加任何额外字段。
-5. 如果输入中没有重复事件，直接返回原数组。
-仅输出合法的 JSON 数组，不要包含任何解释或 Markdown 标记。"""
+        system_msg = """You are an event dedup engine. Merge events describing the same core incident.
+Rules: 1) Extract best display_title_zh. 2) Merge all sources preserving lang tags.
+3) Keep latest date and best insight. 4) Output same array structure. 5) If no dupes, return as-is.
+Output only valid JSON array, no markdown."""
 
         try:
-            client = OpenAI(api_key=api_key, base_url=cls.DEEPSEEK_BASE_URL)
-            response = client.chat.completions.create(
-                model=cls.DEEPSEEK_MODEL,
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": f"以下是 valid_events JSON 数组:\n{events_json}"},
-                ],
+            raw = self._call_llm(
+                system_msg,
+                f"Events JSON:\n{events_json}",
+                temperature=0.0, max_tokens=4096,
                 response_format={"type": "json_object"},
-                temperature=0.0,
-                max_tokens=4096,
             )
-            raw = response.choices[0].message.content or ""
-            cls._accumulate_tokens(response.usage)
+            if raw is None:
+                return valid_events
             # 提取 JSON 数组
             match = re.search(r"\[.*\]", raw, re.DOTALL)
             if not match:
@@ -1747,11 +1030,6 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             logger.info("No raw data to process with LLM.")
             return []
 
-        api_key = os.environ.get("DEEPSEEK_API_KEY")
-        if not api_key:
-            logger.error("环境变量 DEEPSEEK_API_KEY 未设置，无法调用 LLM，返回空结果。")
-            return []
-
         company_names = self.config.get_all_company_display_names()
         total = len(raw_data_list)
         batch_count = (total + self.BATCH_SIZE - 1) // self.BATCH_SIZE
@@ -1761,7 +1039,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         )
 
         all_events: list[dict] = []
-        client = OpenAI(api_key=api_key, base_url=self.DEEPSEEK_BASE_URL)
+        system_prompt = self._build_system_prompt(company_names, mode)
 
         for batch_idx in range(batch_count):
             start = batch_idx * self.BATCH_SIZE
@@ -1772,19 +1050,19 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
             user_message = self._build_articles_text(batch, start)
 
             try:
-                response = client.chat.completions.create(
-                    model=self.DEEPSEEK_MODEL,
-                    messages=[
-                        {"role": "system", "content": self._build_system_prompt(company_names, mode)},
-                        {"role": "user", "content": user_message},
-                    ],
+                raw_output = self._call_llm(
+                    system_prompt, user_message,
+                    temperature=0.1, max_tokens=8192,
                     response_format={"type": "json_object"},
-                    temperature=0.1,
-                    max_tokens=8192,
                 )
 
-                raw_output = response.choices[0].message.content or ""
-                self._accumulate_tokens(response.usage)
+                if raw_output is None:
+                    logger.warning(
+                        f"  ⚠ Batch {batch_idx + 1} LLM call returned None — "
+                        f"DISCARDING {len(batch)} articles."
+                    )
+                    continue
+
                 logger.info(f"  LLM response received ({len(raw_output)} chars).")
 
                 parsed = self._extract_events_object(raw_output)
@@ -2319,6 +1597,18 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
         self._last_valid_events = valid_events
         logger.info(f"Phase 5 done. Python pipeline: {len(intelligence_json)} valid items -> {report_path}")
 
+        # ── 报告归档 (按日期) ───────────────────────────────
+        try:
+            archive_dir = Path(report_path).parent / "reports"
+            archive_dir.mkdir(exist_ok=True)
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            archive_path = archive_dir / f"{today_str}_{mode}.md"
+            import shutil
+            shutil.copy2(report_path, archive_path)
+            logger.info(f"Report archived to: {archive_path}")
+        except Exception:
+            pass
+
         elapsed = time.monotonic() - t0
         date_values = [item.get("date", "") for item in intelligence_json]
         dmin = min(date_values) if date_values else "?"
@@ -2343,12 +1633,45 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
                 self._weekly_review_text = None
                 logger.warning(f"Weekly threat review failed ({e}), weekly report unaffected")
 
+        # ── 运行指标收集 ─────────────────────────────────
+        self._collect_metrics(mode, elapsed, len(all_v10_events), len(valid_events), len(intelligence_json))
+
+    def _collect_metrics(self, mode: str, elapsed: float, total_events: int, valid_events: int, final_items: int) -> None:
+        """收集并持久化本次运行的监控指标。"""
+        try:
+            from esg_agent.metrics import RunMetrics, MetricsStore
+            risk_dist = {}
+            for e in self._last_valid_events:
+                cat = str(e.get("risk_category", "unknown")).strip()
+                risk_dist[cat] = risk_dist.get(cat, 0) + 1
+
+            metrics = RunMetrics(
+                timestamp=datetime.now().isoformat(),
+                mode=mode,
+                elapsed_seconds=elapsed,
+                total_raw_items=len(self.articles),
+                llm_input_tokens=self._llm_usage.prompt_tokens,
+                llm_output_tokens=self._llm_usage.completion_tokens,
+                llm_total_tokens=self._llm_usage.total_tokens,
+                llm_cost_usd=self._llm_usage.total_cost_usd,
+                total_events=total_events,
+                valid_events=valid_events,
+                material_events=sum(1 for e in self._last_valid_events if e.get("is_direct_material_impact")),
+                final_report_items=final_items,
+                risk_distribution=risk_dist,
+            )
+            metrics.log_summary()
+            MetricsStore().append(metrics)
+        except Exception as e:
+            logger.warning(f"Metrics collection failed (non-critical): {e}")
+
     def __init__(self, config_path: str = None):
         self.config = AgentConfig.from_yaml(config_path)
         self.articles: list[NewsArticle] = []
         self._seen_urls: set[str] = set()
         self._last_valid_events: list[dict] = []
         self._weekly_review_text: Optional[str] = None
+        self._llm_usage = TokenUsage()
         self._cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.days_limit)
         geo_count = len(self.config.geographical_tracks)
         prem_c = len(self.config.premium_company_tracks)

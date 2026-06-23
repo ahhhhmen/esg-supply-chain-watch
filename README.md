@@ -18,31 +18,46 @@ esg_agent/                    # 核心模块
 ├── config.py                 # 配置管理与双频路由
 ├── fetchers.py               # RSS 抓取 + 内容提取
 ├── filters.py                # 实体校验 + 漏斗限流
-├── llm_provider.py           # LLM 供应商抽象 (DeepSeek/OpenAI + fallback)
 ├── deduplication.py          # Jaccard 语义去重 + LLM 全局聚合
 ├── reporters.py              # Markdown 报告 + 钉钉/Notion 推送
-├── metrics.py                # 运行指标收集与监控
-└── validators.py             # Pydantic 配置验证
+├── scorer.py                 # Tavily 第三方相关性评分
+├── validators.py             # Pydantic 配置验证
+└── pdf_writer.py             # Markdown → PDF 转换
 
 config.yaml                   # 12 企业 + 4 语种 + 6 主题矩阵
 esg_sources.yaml              # 静态 RSS 抓取轨道
-esg_intelligence_agent.py     # 主入口（1765 行，v9 流水线）
+esg_intelligence_agent.py     # 主入口（v9 流水线）
 ```
+
+共享基础设施（LLM 缓存/重试/抓取/推送等）由 [radar-infra](https://github.com/ahhhhmen/radar-infra) 提供。
 
 ## 快速开始
 
 ```bash
-# 1. 设置环境变量
-export DEEPSEEK_API_KEY="sk-xxx"
-export DINGTALK_WEBHOOK="https://oapi.dingtalk.com/robot/send?access_token=xxx"
+# 1. 克隆项目
+git clone https://github.com/ahhhhmen/company-research-agent.git
+cd company-research-agent
 
-# 2. 安装依赖
+# 2. 创建 .env 文件，至少填入以下变量
+cat > .env << 'EOF'
+DEEPSEEK_API_KEY=sk-your-key-here
+# 可选：OpenAI 作为 fallback
+# OPENAI_API_KEY=sk-your-openai-key
+# 可选：Notion 数据库写入
+# NOTION_TOKEN=secret_xxx
+# NOTION_DATABASE_ID=xxx
+# NOTION_PRACTICE_DATABASE_ID=xxx
+# 可选：钉钉推送
+# DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxx
+EOF
+
+# 3. 安装依赖（自动拉取 radar-infra）
 pip install -r requirements.txt
 
-# 3. 运行每日舆情监控
+# 4. 运行每日舆情监控
 python esg_intelligence_agent.py --mode daily
 
-# 4. 运行每周宏观政策周报
+# 5. 运行每周宏观政策周报
 python esg_intelligence_agent.py --mode weekly --no-push
 ```
 

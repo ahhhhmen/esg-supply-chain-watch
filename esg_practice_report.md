@@ -1,33 +1,41 @@
 # 🌱 同业良好实践周报 (Industry Best Practice Weekly)
 
-> 📅 **生成时间**: 2026-06-23 12:36:27
-> 📊 **实践总数**: 2 条 | 涉及企业: 1 家
+> 📅 **生成时间**: 2026-06-23 06:21:36
+> 📊 **实践总数**: 3 条 | 涉及企业: 1 家
 > 📆 **覆盖时段**: 2026-06-23 ~ 2026-06-23
 
 ---
 
 ## 📑 目录
 
-- 📊 **ESG披露与治理**（2 条）
+- 📊 **ESG披露与治理**（3 条）
 
 ---
 
 ## 📊 ESG披露与治理
 > 首份 ESG 报告发布、CDP A-List、MSCI 评级提升、治理架构优化的具体路径
 
-**宁德时代 | 宁德时代发布两项新型电池安全技术**
+**宁德时代 | 宁德时代在链博会发布天恒钠电储能系统，-50℃稳定放电**
 
 💡 学习要点：（待进一步分析）
 
-📋 参考了解 · 📅 2026-06-23 · 📰 [MediaKompeten](https://news.google.com/rss/articles/CBMihAFBVV95cUxQbU03Mkx6WXhOZ1hHdXp6STNNOFFmWUhRXzM2UEpjYlA4RG1LVnFPd) · [Medcom.id](https://news.google.com/rss/articles/CBMijgJBVV95cUxNOXZkUkZPeG96R2M3eDZ3UE0ybURKQlBsaTRwSlF2cE1yQTNBa1R6RE)
+📋 参考了解 · 📅 2026-06-23 · 📰 [证券之星](https://news.google.com/rss/articles/CBMiXkFVX3lxTFBtUkl2Y3NWSV9jbTdwNGdFN0RCS1BiLU93OHZvajY4TTJXajN2YXI2U2ZOckMxTk02dERDdm9pRG9Oc21rczhJZlRDYklvaFRpNGhONUdFU2FUYm5SMmc) · [搜狐网](https://news.google.com/rss/articles/CBMiiAFBVV95cUxNV1AxUUd0SE9ZV20zYTVSajNYUlVwQ3N2V19ha2V6LTVMcUZBRjkyazc0aHRTSC13NWU4T3NSSWFqdzdzNU1COGFrSDByMUphY0pjQWVaZnZhbjhpQVNpZk5KNHdrVVVOYWxZQnZ0V1hxMFdsa0dzN1NxN3l1RzA4NTI3VWhuQ2lS) · 等 4 家
 
 ---
 
-**宁德时代 | 宁德时代推出Tener钠离子储能系统**
+**宁德时代 | 宁德时代获得两项电池安全设计专利**
 
 💡 学习要点：（待进一步分析）
 
-📋 参考了解 · 📅 2026-06-23 · 📰 [ANTARA News](https://news.google.com/rss/articles/CBMioAFBVV95cUxNOHJmdHdreFY3X1RiblR5SmNlSVBYcVVnQkpDazB3UE8wcW5qdTgxcTdDZW03VHZkYk)
+📋 参考了解 · 📅 2026-06-23 · 📰 [Sultra Media](https://news.google.com/rss/articles/CBMigAFBVV95cUxPT3N5amhEcGdqbllCUUF5Ti1reEJ6UEhNZXVCZlVXR2phZlJKQzFsMUtraWlJS2MtRnpJSGxUTXJyNlhYVElMX1g4dUQtdVhiaGhGN2hyRDFySDY2Sno2VkFNWDR2NWUtbE1KQW9aVFVWMHJ5cWZpSW9QMjV1OWM3UQ) · [MediaKompeten](https://news.google.com/rss/articles/CBMihAFBVV95cUxQbU03Mkx6WXhOZ1hHdXp6STNNOFFmWUhRXzM2UEpjYlA4RG1LVnFPdlRiZUpNZFpNQURwbDV2V01VNDRhMXhwb3FKTFZSRW5kcEhkYUtxck1WQUNvVm83LU5ISWZ6SG53SVdrZjhlZGxDS0xPVnJFNEhlcWtnTVZubk5tcDI)
+
+---
+
+**宁德时代 | 宁德时代、阳光电源入股碳科技企业碳生万物**
+
+💡 学习要点：（待进一步分析）
+
+📋 参考了解 · 📅 2026-06-23 · 📰 [caiwennews.com](https://news.google.com/rss/articles/CBMiXEFVX3lxTE9PZDBTdGpHUWxrWEk3YlZMYkVjcTBXX0hCemFxY1JsbVd4bXRmMFg4VG9hZ2czVjFuMkNJYWEyYW1rUC1QWDJzTDJrTi1yRTFkbmRSTUVOSkRidUhU)
 
 ---
 
@@ -38,4 +46,4 @@
 
 ---
 
-💰 Token 消耗: in=11,471 out=993 total=12,464 cost=$0.0019
+💰 Token 消耗: in=11,680 out=3,148 total=14,828 cost=$0.0025

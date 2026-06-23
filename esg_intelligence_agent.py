@@ -356,15 +356,16 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 
 	2. 有效性判定 (is_valid_practice)：
 	   - 若实体错误（如"比亚迪医院""丰田医院"），值为 false。
-	   - 若事件为【纯负面/风险类】（罢工、污染、召回、制裁、罚款），值为 false。这些属于风险监控范畴，不属于良好实践。
+	   - 若事件为【纯负面/风险类】（罢工、污染、召回、制裁、罚款），值为 false。
 	   - 若事件为【营销/品牌宣传】（如发布广告、赞助活动、老板言论、品牌换新），值为 false。
-	   - 若事件为【产品发布/技术宣讲】（如"发布新款电池""推出新储能系统""展示概念车""召开技术发布会"），且无以下实质证据之一，值为 false：
+	   - 若事件为【产品发布/展会展示】（如"在某某展会发布""亮相某某博览会""推出新款""概念展示"），且无以下实质证据之一，值为 false：
 	     · 量产启动（注明日期或产能数据）
 	     · 第三方认证/测试机构出具的性能验证报告
 	     · 具体效率/密度/成本数字超出现有行业水平
 	     · 已获专利授权（非仅是"申请中"或"布局中"）
-	     解读要诀：产品发布 ≠ 可借鉴实践。如果新闻内容是"某公司推出某产品"，只描述产品功能而无可验证的技术突破指标，则 is_valid_practice = false。
-	   - 若事件为【股价波动/财报数据/投融资变动】，值为 false。这些不是可复制的"实践"。
+	     核心判据：展会展示/产品发布 ≠ 可借鉴实践。如果新闻只是"某公司在某场合展示了某产品"，无论产品参数多漂亮，只要没有量产、认证或专利授权等硬证据，is_valid_practice = false。
+	   - 若事件为【股权投资/参股入股】（如"入股""参股""投资""收购股权""战略投资"某公司），值为 false。财务投资不是可复制的运营实践，即使投资对象属于绿色/低碳领域。
+	   - 若事件为【股价波动/财报数据】，值为 false。
 	   - 只有明确包含以下类别之一的【具体行动和成果】时，值才为 true：
 	     · 绿色制造成果：碳中和认证、绿电切换、零碳工厂投产、碳足迹显著下降
 	     · 供应链合规标杆：通过 RMI/RBA/IRMA 等认证、发布冲突矿产报告、供应商行为准则升级
@@ -372,12 +373,19 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 	     · ESG 披露与治理升级：CDP A-List 入选、MSCI 评级提升、发布首份 ESG 报告、设立董事会可持续发展委员会
 	     · 技术创新突破：无钴/固态/钠离子电池量产、新型正极材料突破、回收工艺专利
 
-3. 实践分类 (practice_category) — 5 类标准化分类：
-   - "绿色制造与减碳"：碳中和认证、绿电切换、零碳工厂、清洁生产、可再生能源使用
-   - "供应链尽职调查与合规标杆"：负责任采购、冲突矿产报告、供应链透明度提升、通过 RMI/RBA 认证
-   - "循环经济与回收"：电池回收、闭环回收、梯次利用、再生材料使用、材料回收率提升
-   - "ESG披露与治理"：ESG 报告发布、CDP 评级、MSCI 评级提升、治理结构优化
-   - "技术创新与工艺升级"：无钴电池、固态电池、钠离子电池、新材料、研发突破
+	3. 实践分类 (practice_category) — 5 类标准化分类及边界规则：
+
+	   【分类边界铁律——必须严格遵守】
+	   - 涉及"专利授权""专利获得""技术突破""量产""新材料""电池技术" → 必须归类为 "技术创新与工艺升级"，不可误判为 ESG披露。
+	   - 涉及"ESG报告""CDP评级""MSCI评级""董事会委员会""可持续发展报告" → 才归类为 "ESG披露与治理"。
+	   - 涉及"入股""参股""投资""收购" → 本身即 is_valid_practice=false，无需纠结分类。
+
+	   各分类定义：
+	   - "绿色制造与减碳"：碳中和认证、绿电切换、零碳工厂、清洁生产、可再生能源使用
+	   - "供应链尽职调查与合规标杆"：负责任采购、冲突矿产报告、供应链透明度提升、通过 RMI/RBA 认证
+	   - "循环经济与回收"：电池回收、闭环回收、梯次利用、再生材料使用、材料回收率提升
+	   - "ESG披露与治理"：ESG 报告发布、CDP 评级、MSCI 评级提升、治理结构优化
+	   - "技术创新与工艺升级"：无钴电池、固态电池、钠离子电池、新材料、研发突破、**专利授权**
 
 4. 可借鉴度判定 (is_replicable) — 华友钴业视角：
    你需要站在华友钴业（主营前驱体/正极材料/镍钴锂资源）的立场，判定该实践是否可以被华友借鉴或学习。
@@ -401,14 +409,17 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
    - 绿电路径：对方的绿电采购策略（PPA/自发自用/绿证）是否适用华友的冶炼基地
    - 回收体系：对方的电池回收/闭环体系设计是否可被华友参考
    - 披露体系：对方的 ESG 报告框架、数据收集方法是否可被华友借鉴
-4. 字数红线：50-80 汉字，低于 50 或超过 80 视为违规。
-5. 禁止行为建议：严禁使用"建议""应当""需要""必须"等指导性措辞。仅做"可借鉴"的客观分析。
-6. 正例：
-   - "BYD 通过屋顶光伏+PPA组合实现全球工厂100%绿电。华友在衢州/广西冶炼基地可参考此双轨绿电模型，结合屋顶光伏自用与长期绿电采购协议，降低前驱体碳足迹。"
-   - "Umicore 完成 Hoboken 冶炼厂 IRMA 认证，成为欧洲首家获此认证的钴精炼厂。华友在印尼镍项目可参考其认证路径，优先在火法冶炼环节推动 IRMA 预审。"
-7. 反例（违规，绝不可输出）：
-   - "建议华友加强 ESG 披露" — 包含行为建议
-   - "该实践值得关注" — 空洞无物
+	4. 字数红线：25-80 汉字。低于 25 或超过 80 视为违规。
+	   ⚠️ 绝不可为空：learning_insight 字段在任何情况下（包括 is_valid_practice=true 和 false）都不可为空字符串 ""。至少输出一句 25 字以上的客观分析。is_valid_practice=false 时可简写为"纯产品发布，无量产/认证/专利证据"或"股权投资，非运营实践"。
+	5. 禁止行为建议：严禁使用"建议""应当""需要""必须"等指导性措辞。仅做"可借鉴"的客观分析。
+	6. 正例：
+	   - "BYD 通过屋顶光伏+PPA组合实现全球工厂100%绿电。华友在衢州/广西冶炼基地可参考此双轨绿电模型，结合屋顶光伏自用与长期绿电采购协议，降低前驱体碳足迹。"
+	   - "Umicore 完成 Hoboken 冶炼厂 IRMA 认证，成为欧洲首家获此认证的钴精炼厂。华友在印尼镍项目可参考其认证路径，优先在火法冶炼环节推动 IRMA 预审。"
+	   - "CATL 获得两项电池安全设计中国专利授权，专利覆盖热失控防护与结构设计。华友前驱体/正极材料研发团队可借鉴其安全设计思路，联合电池客户开展正极-电芯协同安全专利布局。"
+	7. 反例（违规，绝不可输出）：
+	   - "建议华友加强 ESG 披露" — 包含行为建议
+	   - "该实践值得关注" — 空洞无物
+	   - "" — 空字符串，最严重违规
 
 # Output Format
 你必须仅输出合法的 JSON 数据。JSON 结构必须如下：
@@ -419,20 +430,32 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
       "core_event_title_en": "统一转换为标准英文的核心事件简短摘要（5-8个词），专门用于 Python 侧去重",
       "display_title_zh": "精炼、专业的纯中文新闻标题，供高管最终阅读",
       "original_language": "识别原始新闻的语种，如 '印尼语', '英语', '德语', '中文'",
-      "learning_insight": "客观事实 + 华友可借鉴要点，50-80字",
-      "date": "最新日期 YYYY-MM-DD",
-      "sources": [{{"name": "媒体A", "url": "https://example.com/articleA"}}],
-      "practice_category": "上述五大分类之一",
-      "is_valid_practice": true,
-      "is_replicable": true
-    }},
+	      "learning_insight": "客观事实 + 华友可借鉴要点，25-80字，绝不可为空",
+	      "date": "最新日期 YYYY-MM-DD",
+	      "sources": [{{"name": "媒体A", "url": "https://example.com/articleA"}}],
+	      "practice_category": "上述五大分类之一",
+	      "is_valid_practice": true,
+	      "is_replicable": true
+	    }},
 	    {{
 	      "entity": "宁德时代",
-	      "core_event_title_en": "CATL launches new sodium-ion energy storage system",
-	      "display_title_zh": "宁德时代推出Tener钠离子储能系统",
+	      "core_event_title_en": "CATL obtains two battery safety design patents",
+	      "display_title_zh": "宁德时代获得两项电池安全设计专利",
 	      "original_language": "中文",
-	      "learning_insight": "纯产品发布新闻，无量产数据、第三方认证或可验证的技术突破指标，非可复制实践。",
-	      "date": "2026-06-20",
+	      "learning_insight": "CATL获两项电池安全设计专利授权，覆盖热失控防护与结构创新。华友前驱体/正极材料研发团队可借鉴其安全设计思路，联合电池客户开展材料-电芯协同安全专利布局。",
+	      "date": "2026-06-23",
+	      "sources": [{{"name": "国家知识产权局", "url": "https://cnipa.gov.cn/example"}}],
+	      "practice_category": "技术创新与工艺升级",
+	      "is_valid_practice": true,
+	      "is_replicable": true
+	    }},
+	    {{
+	      "entity": "宁德时代",
+	      "core_event_title_en": "CATL launches Tener sodium-ion storage system at expo",
+	      "display_title_zh": "宁德时代在链博会发布天恒钠电储能系统",
+	      "original_language": "中文",
+	      "learning_insight": "链博会展出产品，无量产时间表、第三方认证或已授权专利证据，属展会宣讲而非可验证的技术突破。",
+	      "date": "2026-06-23",
 	      "sources": [{{"name": "36氪", "url": "https://36kr.com/example"}}],
 	      "practice_category": "技术创新与工艺升级",
 	      "is_valid_practice": false,
@@ -440,13 +463,13 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 	    }},
 	    {{
 	      "entity": "宁德时代",
-	      "core_event_title_en": "CATL announces two new battery safety technologies",
-	      "display_title_zh": "宁德时代发布两项新型电池安全技术",
+	      "core_event_title_en": "CATL invests in carbon technology startup",
+	      "display_title_zh": "宁德时代、阳光电源入股碳科技企业碳生万物",
 	      "original_language": "中文",
-	      "learning_insight": "技术宣讲/能力展示，无量产时间表、第三方测试数据或已授权专利证据，非可复制实践。",
-	      "date": "2026-06-21",
-	      "sources": [{{"name": "第一财经", "url": "https://yicai.com/example"}}],
-	      "practice_category": "技术创新与工艺升级",
+	      "learning_insight": "股权投资行为，非可复制的运营实践，即使投资对象属绿色低碳领域。",
+	      "date": "2026-06-23",
+	      "sources": [{{"name": "企查查", "url": "https://qcc.com/example"}}],
+	      "practice_category": "ESG披露与治理",
 	      "is_valid_practice": false,
 	      "is_replicable": false
 	    }}
@@ -1307,7 +1330,7 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                     or e.get("core_event_title_en")
                     or ""
                 ).strip()
-                learning = str(e.get("learning_insight", "")).strip() or "（待进一步分析）"
+                learning = str(e.get("learning_insight", "")).strip()
                 date = str(e.get("date", ""))[:10]
                 is_replicable = bool(e.get("is_replicable", False))
                 replicable_badge = "✅ 可借鉴" if is_replicable else "📋 参考了解"
@@ -1335,8 +1358,9 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
 
                 lines.append(f"**{entity} | {title_text}**")
                 lines.append("")
-                lines.append(f"💡 学习要点：{learning}")
-                lines.append("")
+                if learning:
+                    lines.append(f"💡 学习要点：{learning}")
+                    lines.append("")
                 lines.append(f"{replicable_badge} · 📅 {date} · 📰 {sources_str}")
                 lines.append("")
                 lines.append("---")
@@ -1783,12 +1807,13 @@ Output only valid JSON array, no markdown."""
                 title_text = str(
                     e.get("display_title_zh") or e.get("core_event_title_en", "")
                 ).strip()
-                learning = str(e.get("learning_insight", "")).strip() or "（待进一步分析）"
+                learning = str(e.get("learning_insight", "")).strip()
                 date = str(e.get("date", ""))[:10]
                 is_rep = "✅" if e.get("is_replicable") else "📋"
 
                 lines.append(f"**{entity} | {title_text}**")
-                lines.append(f"💡 {learning}")
+                if learning and learning != "（待进一步分析）":
+                    lines.append(f"💡 {learning}")
                 lines.append(f"{is_rep} · 📅 {date}")
                 lines.append("")
 

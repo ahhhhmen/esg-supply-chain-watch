@@ -81,6 +81,8 @@ class AgentConfig:
     premium_global_tracks: list[dict] = field(default_factory=list)
     daily_topics: list[dict] = field(default_factory=list)
     weekly_topics: list[dict] = field(default_factory=list)
+    practice_companies: list[dict] = field(default_factory=list)
+    practice_topics: list[dict] = field(default_factory=list)
     days_limit: int = 14
 
     # ── 工厂方法 ──────────────────────────────────────────
@@ -110,6 +112,8 @@ class AgentConfig:
             premium_global_tracks=tracks.get("premium_global_tracks", []),
             daily_topics=topics.get("daily", []),
             weekly_topics=topics.get("weekly", []),
+            practice_companies=raw.get("practice_companies", []),
+            practice_topics=raw.get("practice_topics", []),
             days_limit=raw.get("days_limit", 14),
         )
 
@@ -122,6 +126,9 @@ class AgentConfig:
 
     def get_all_company_display_names(self) -> list[str]:
         return [self.get_company_display_name(c) for c in self.companies]
+
+    def get_practice_company_display_names(self) -> list[str]:
+        return [self.get_company_display_name(c) for c in self.practice_companies]
 
     # ── 主题关键词辅助方法 ──────────────────────────────
 
@@ -156,8 +163,53 @@ class AgentConfig:
           - 轨道 1（地缘通用轨）：每企业 × 每语种 × (每日 + 周报) 主题关键词
           - 轨道 2（BHRRC 定向）：每企业定向抓取
           - 轨道 3（EFRAG 宏观政策）：全局抓取
+
+        mode=practice:
+          - 仅轨道 1（地缘通用轨）：practice 企业 × 每语种 × practice 主题关键词
+          - 跳过轨道 2（BHRRC）与轨道 3（EFRAG）——这两者都是风险专属
         """
         items: list[QueryItem] = []
+
+        # practice 轨道：独立的企业名单与主题矩阵，只走地理新闻轨
+        if mode == "practice":
+            companies = self.practice_companies or self.companies
+            active_topics = self.practice_topics or self.daily_topics
+            logger.info(
+                f"Building query tasks for mode=practice: "
+                f"{len(active_topics)} practice topics, {len(companies)} practice companies, "
+                f"{len(self.geographical_tracks)} geo tracks"
+            )
+            for company in companies:
+                name_zh = company.get("name_zh", "")
+                name_en = company.get("name_en", "")
+                for geo in self.geographical_tracks:
+                    lang = geo.get("lang", "en-US")
+                    url_template = geo.get("url_template", "")
+                    lang_label = geo.get("lang_label", lang)
+                    if not url_template:
+                        continue
+                    search_term = name_zh if lang in _GEO_CN_LANGS else name_en
+                    if not search_term:
+                        continue
+                    for topic in active_topics:
+                        category = topic.get("category", "")
+                        keywords = self._get_keywords_for_lang(topic, lang)
+                        if not keywords:
+                            continue
+                        kw_query = self._build_keyword_query(keywords)
+                        full_query = f'"{search_term}" {kw_query} when:30d'
+                        query_encoded = quote(full_query)
+                        final_url = url_template.replace("{query}", query_encoded)
+                        items.append(QueryItem(
+                            url=final_url,
+                            company_name_zh=name_zh,
+                            company_name_en=name_en,
+                            track_label=f"实践供料 ({lang_label})",
+                            lang=lang,
+                            topic_category=category,
+                        ))
+            logger.info(f"Total query tasks generated: {len(items)}")
+            return items
 
         # 确定主题集
         if mode == "weekly":

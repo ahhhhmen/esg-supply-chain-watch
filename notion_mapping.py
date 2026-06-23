@@ -95,3 +95,70 @@ def map_entity(original_entity: str) -> str:
     if not original_entity:
         return "其他"
     return original_entity.strip()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Practice Category 映射（同业良好实践轨道）
+# ════════════════════════════════════════════════════════════════════════════
+
+# 合法的 practice 分类集合（与 config.yaml 的 practice_topics.category 一致）
+_PRACTICE_CATEGORIES = {
+    "绿色制造与减碳",
+    "供应链尽职调查与合规标杆",
+    "循环经济与回收",
+    "ESG披露与治理",
+    "技术创新与工艺升级",
+}
+
+# 常见别名 / 不规范写法 → 标准分类
+_PRACTICE_CATEGORY_ALIASES = {
+    "绿色制造": "绿色制造与减碳",
+    "减碳": "绿色制造与减碳",
+    "碳中和": "绿色制造与减碳",
+    "供应链尽职调查": "供应链尽职调查与合规标杆",
+    "合规标杆": "供应链尽职调查与合规标杆",
+    "负责任采购": "供应链尽职调查与合规标杆",
+    "循环经济": "循环经济与回收",
+    "回收": "循环经济与回收",
+    "电池回收": "循环经济与回收",
+    "ESG披露": "ESG披露与治理",
+    "治理": "ESG披露与治理",
+    "ESG": "ESG披露与治理",
+    "技术创新": "技术创新与工艺升级",
+    "工艺升级": "技术创新与工艺升级",
+    "研发": "技术创新与工艺升级",
+}
+
+
+def map_practice_category(original_category: str) -> str:
+    """
+    将 agent 产出的实践分类归一化为 Notion 标准分类。
+
+    Args:
+        original_category: agent 生成的原始分类名
+
+    Returns:
+        标准分类名（5 选 1），未匹配时兜底返回 "ESG披露与治理"
+    """
+    if not original_category:
+        return "ESG披露与治理"
+
+    original_category = original_category.strip()
+
+    # 精确匹配
+    if original_category in _PRACTICE_CATEGORIES:
+        return original_category
+
+    # 别名匹配
+    if original_category in _PRACTICE_CATEGORY_ALIASES:
+        return _PRACTICE_CATEGORY_ALIASES[original_category]
+
+    # 模糊包含匹配
+    normalized = original_category.lower()
+    for keyword, standard in _PRACTICE_CATEGORY_ALIASES.items():
+        if keyword.lower() in normalized:
+            return standard
+
+    # 兜底
+    return "ESG披露与治理"
+

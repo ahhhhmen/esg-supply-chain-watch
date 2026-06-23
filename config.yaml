@@ -132,3 +132,85 @@ topics:
 
 # 4. 系统运行控制参数
 days_limit: 14
+
+# ════════════════════════════════════════════════════════════════════════════
+# 5. 同业良好实践监控（practice 轨道）
+# 独立于风险监控的关键词矩阵 + 扩充行业标杆企业，由 --mode practice 触发。
+# 复用 geographical_tracks 的多语种 RSS 模板，仅替换企业名单与主题关键词。
+# ════════════════════════════════════════════════════════════════════════════
+practice_companies:
+  # ── 行业标杆（扩充，用于学习借鉴） ──────────────────────
+  - name_zh: "比亚迪"
+    name_en: "BYD"
+    ticker: "002594.SZ"
+  - name_zh: "丰田汽车"
+    name_en: "Toyota"
+    ticker: "7203.T"
+  - name_zh: "苹果"
+    name_en: "Apple"
+    ticker: "AAPL"
+  - name_zh: "紫金矿业"
+    name_en: "Zijin Mining"
+    ticker: "601899.SS"
+  - name_zh: "Umicore"
+    name_en: "Umicore"
+    ticker: "UMI.BR"
+  - name_zh: "优美科"
+    name_en: "Umicore"
+    ticker: "UMI.BR"
+  # ── 现有同业（作对照，一并纳入实践视野） ────────────────
+  - name_zh: "华友钴业"
+    name_en: "Huayou Cobalt"
+    ticker: "603799.SS"
+  - name_zh: "赣锋锂业"
+    name_en: "Ganfeng Lithium"
+    ticker: "002460.SZ"
+  - name_zh: "宁德时代"
+    name_en: "CATL"
+    ticker: "300750.SZ"
+  - name_zh: "格林美"
+    name_en: "GEM"
+    ticker: "002340.SZ"
+  - name_zh: "洛阳钼业"
+    name_en: "CMOC"
+    ticker: "603993.SS"
+  - name_zh: "特斯拉"
+    name_en: "Tesla"
+    ticker: "TSLA"
+
+# practice 主题关键词矩阵（多语种）—— 聚焦"可复制的优秀做法"
+practice_topics:
+  - category: "绿色制造与减碳"
+    keywords:
+      zh-CN: ["减碳", "碳中和", "绿电", "零碳工厂", "碳足迹", "清洁生产", "碳减排"]
+      en-US: ["carbon neutral", "decarbonization", "net zero", "green manufacturing", "renewable energy", "clean production", "carbon reduction"]
+      id-ID: ["netral karbon", "dekarbonisasi", "energi terbarukan", "nol emisi", "produksi bersih"]
+      fr-FR: ["neutre en carbone", "décarbonation", "énergie renouvelable", "net zéro", "production propre"]
+
+  - category: "供应链尽职调查与合规标杆"
+    keywords:
+      zh-CN: ["负责任采购", "尽职调查", "冲突矿产", "供应链透明", "负责任矿产倡议", "责任商业联盟", "RMI", "RBA"]
+      en-US: ["responsible sourcing", "due diligence", "conflict minerals", "supply chain transparency", "responsible mining", "RMI", "RBA"]
+      id-ID: ["sumber bertanggung jawab", "uji tuntas", " transparansi rantai pasok", "mineral konflik"]
+      fr-FR: ["approvisionnement responsable", "devoir de vigilance", "minéraux de conflit", "transparence chaîne d'approvisionnement"]
+
+  - category: "循环经济与回收"
+    keywords:
+      zh-CN: ["电池回收", "闭环回收", "梯次利用", "循环经济", "再生材料", "材料回收"]
+      en-US: ["battery recycling", "closed loop", "circular economy", "second life battery", "recycled material", "material recovery"]
+      id-ID: ["daur ulang baterai", "ekonomi sirkular", "loop tertutup", "bahan daur ulang"]
+      fr-FR: ["recyclage batterie", "économie circulaire", "boucle fermée", "seconde vie", "matière recyclée"]
+
+  - category: "ESG披露与治理"
+    keywords:
+      zh-CN: ["ESG报告", "可持续发展报告", "CDP", "MSCI评级", "治理最佳实践", "ESG评级提升", "责任投资"]
+      en-US: ["ESG report", "sustainability report", "CDP A list", "MSCI rating upgrade", "governance best practice", "responsible investment"]
+      id-ID: ["laporan ESG", "laporan keberlanjutan", "CDP", "rating MSCI", "praktik tata kelola"]
+      fr-FR: ["rapport ESG", "rapport durabilité", "CDP", "notation MSCI", "bonne pratique de gouvernance"]
+
+  - category: "技术创新与工艺升级"
+    keywords:
+      zh-CN: ["无钴电池", "固态电池", "钠离子电池", "创新工艺", "技术突破", "新材料", "研发投入"]
+      en-US: ["cobalt free battery", "solid state battery", "sodium ion battery", "innovation", "technology breakthrough", "new material", "R&D"]
+      id-ID: ["baterai tanpa kobalt", "baterai solid state", "baterai natrium", "inovasi", "terobosan teknologi"]
+      fr-FR: ["batterie sans cobalt", "batterie solide", "batterie sodium", "innovation", "percée technologique", "nouveau matériau"]

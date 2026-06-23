@@ -72,13 +72,22 @@ class MarkdownReportWriter:
         return dict(sorted(groups.items(), key=lambda item: cls.TAG_PRIORITY.get(item[0], 999)))
 
     def _get_report_title(self) -> str:
-        return "🏛️ ESG Global Strategy Report" if self.mode == "weekly" else "📊 ESG Daily Risk Radar"
+        if self.mode == "practice":
+            return "🌱 同业良好实践周报 (Industry Best Practice Weekly)"
+        elif self.mode == "weekly":
+            return "🏛️ ESG Global Strategy Report"
+        else:
+            return "📊 ESG Daily Risk Radar"
 
     def generate(self, path: str = "esg_global_report.md") -> None:
         if self.df.empty or "company" not in self.df.columns:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if self.mode == "practice":
+                empty_msg = "No best practice events detected this week."
+            else:
+                empty_msg = "No risk events detected today."
             Path(path).write_text(
-                f"# {self._get_report_title()}\n\n> 📅 Generated: {now}\n\nNo risk events detected today.\n",
+                f"# {self._get_report_title()}\n\n> 📅 Generated: {now}\n\n{empty_msg}\n",
                 encoding="utf-8",
             )
             logger.info(f"Empty report written to {path}")

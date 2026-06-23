@@ -1,0 +1,58 @@
+name: ESG Best Practice Weekly (Practice)
+
+# 配置触发时机
+on:
+  schedule:
+    # 北京时间每周四早上 06:00 运行（与风险周报周五错开一天），UTC = BJT-8
+    # UTC 周三 22:00 = BJT 周四 06:00
+    - cron: '0 22 * * 3'
+  workflow_dispatch:
+    # 允许在 GitHub 网页端手动点击运行按钮
+
+jobs:
+  run-practice-monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    # 1. 检出仓库代码
+    - name: Checkout Repository Code
+      uses: actions/checkout@v4
+
+    # 2. 部署 Python 3.10 环境
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    # 3. 安装依赖
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # 4. 执行同业良好实践情报检索（--mode practice）
+    - name: Execute ESG Intelligence Agent (Practice)
+      env:
+        DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        NOTION_PRACTICE_DATABASE_ID: ${{ secrets.NOTION_PRACTICE_DATABASE_ID }}
+      run: |
+        python esg_intelligence_agent.py --mode practice
+
+    # 5. 自动化成果回传（将新生成的 Practice 报告推回仓库）
+    - name: Commit and Push Practice Report
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # 检查报告文件是否有更新
+        if [ -f "esg_practice_report.md" ]; then
+          git add esg_practice_report.md
+          git diff-index --quiet HEAD || git commit -m "🌱 每周自动更新: 同业良好实践周报 ($(date +'%Y-%m-%d %H:%M'))"
+          git push
+        else
+          echo "警告：未检测到生成的实践报告文件。"
+        fi

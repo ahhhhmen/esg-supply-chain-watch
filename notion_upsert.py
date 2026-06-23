@@ -18,9 +18,14 @@ notion_upsert.py — 幂等 Notion 写入助手
 
 import hashlib
 import logging
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
-from notion_mapping import EXTERNAL_ID, map_risk_category, map_entity
+from notion_mapping import (
+    EXTERNAL_ID,
+    map_risk_category,
+    map_practice_category,
+    map_entity,
+)
 
 logger = logging.getLogger("notion_upsert")
 
@@ -171,6 +176,7 @@ def upsert_notion_page(
     notion: Any,
     database_id: str,
     dry_run: bool = False,
+    properties_builder: Optional[Callable[[dict], dict]] = None,
 ) -> tuple[str, Optional[str]]:
     """
     幂等地将事件写入 Notion 数据库。
@@ -180,6 +186,8 @@ def upsert_notion_page(
         notion: NotionClient 实例
         database_id: Notion 数据库 ID
         dry_run: True 时仅打印日志，不执行 API 调用
+        properties_builder: 可选的 properties 构建函数，默认 build_notion_properties。
+            practice 轨道传入 build_practice_properties。
 
     Returns:
         (action, page_id) — action 为 "created" / "updated" / "skipped"
@@ -199,7 +207,9 @@ def upsert_notion_page(
     # 查询是否已存在
     existing_page_id = query_page_by_external_id(notion, database_id, external_id)
 
-    properties = build_notion_properties(event)
+    if properties_builder is None:
+        properties_builder = build_notion_properties
+    properties = properties_builder(event)
 
     if existing_page_id:
         # 更新已有页面
@@ -221,3 +231,110 @@ def upsert_notion_page(
             f"  ✅ 已创建 | External ID={external_id} | {entity} | {title_short}..."
         )
         return ("created", new_page.get("id"))
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Practice 轨道（同业良好实践）— 独立 schema，复用幂等机制
+# ════════════════════════════════════════════════════════════════════════════
+
+def build_practice_properties(event: dict) -> dict:
+    """
+    将实践事件字典映射为 Notion API properties（practice 独立 schema）。
+
+    与 build_notion_properties 的差异：
+      - Practice Category（替代 Risk Category）
+      - Learning Insight（替代 Executive Insight）
+      - Replicable（checkbox，华友可借鉴度，替代 is_direct_material_impact）
+      - 其余字段（标题/Entity/Date/Sources/Mode/Push Date/External ID）一致
+    """
+    mapped_category = map_practice_category(
+        event.get("practice_category", event.get("category", ""))
+    )
+
+    title_text = event.get("display_title_zh", "")[:2000]
+    english_title = event.get("english_title", event.get("core_event_title_en", ""))[:2000]
+    learning_text = event.get("learning_insight", event.get("insight", ""))[:2000]
+    sources_text = event.get("sources", "")
+
+    if isinstance(sources_text, list):
+        src_parts = []
+        for s in sources_text[:5]:
+            if isinstance(s, dict):
+                name = s.get("name", "")
+                url = s.get("url", "")
+                if url:
+                    src_parts.append(f"[{name}]({url})")
+                else:
+                    src_parts.append(name)
+            else:
+                src_parts.append(str(s))
+        sources_text = ", ".join(src_parts)
+    sources_text = sources_text[:2000] if isinstance(sources_text, str) else ""
+
+    is_replicable = bool(event.get("is_replicable", False))
+
+    return {
+        "标题": {
+            "title": [{"text": {"content": title_text}}]
+        },
+        "English Title": {
+            "rich_text": [{"text": {"content": english_title}}]
+        },
+        "Entity": {
+            "select": {"name": map_entity(event.get("entity", ""))}
+        },
+        "Practice Category": {
+            "select": {"name": mapped_category}
+        },
+        "Date": {
+            "date": {"start": event.get("date", "")}
+        },
+        "Learning Insight": {
+            "rich_text": [{"text": {"content": learning_text}}]
+        },
+        "Replicable": {
+            "checkbox": is_replicable
+        },
+        "Sources": {
+            "rich_text": [{"text": {"content": sources_text}}]
+        },
+        "Mode": {
+            "select": {"name": event.get("mode", "practice")}
+        },
+        "Push Date": {
+            "date": {"start": event.get("push_date", "")}
+        },
+        EXTERNAL_ID: {
+            "rich_text": [{"text": {"content": event.get("_external_id", "")}}]
+        },
+    }
+
+
+def upsert_practice_page(
+    event: dict,
+    notion: Any,
+    database_id: str,
+    dry_run: bool = False,
+) -> tuple[str, Optional[str]]:
+    """
+    幂等地将实践事件写入 practice 独立 Notion 数据库。
+
+    复用 upsert_notion_page 的幂等核心，仅替换 properties builder。
+
+    Args:
+        event: 实践事件字典
+        notion: NotionClient 实例
+        database_id: practice Notion 数据库 ID
+        dry_run: True 时仅打印日志
+
+    Returns:
+        (action, page_id) — action 为 "created" / "updated" / "skipped"
+    """
+    return upsert_notion_page(
+        event,
+        notion,
+        database_id,
+        dry_run=dry_run,
+        properties_builder=build_practice_properties,
+    )
+

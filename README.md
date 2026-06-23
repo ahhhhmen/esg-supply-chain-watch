@@ -35,8 +35,8 @@ esg_intelligence_agent.py     # 主入口（v9 流水线）
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/ahhhhmen/company-research-agent.git
-cd company-research-agent
+git clone https://github.com/ahhhhmen/esg-supply-chain-watch.git
+cd esg-supply-chain-watch
 
 # 2. 创建 .env 文件，至少填入以下变量
 cat > .env << 'EOF'

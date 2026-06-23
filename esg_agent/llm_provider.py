@@ -81,15 +81,16 @@ class DeepSeekProvider(BaseLLMProvider):
     PRICE_INPUT_PER_1M = 0.14
     PRICE_OUTPUT_PER_1M = 0.28
 
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str = None, model: str = None):
         api_key = api_key or os.environ.get("DEEPSEEK_API_KEY", "")
         if not api_key:
             raise RuntimeError("DEEPSEEK_API_KEY not set")
         self._client = OpenAI(api_key=api_key, base_url=self.BASE_URL)
+        self._model = model or self.MODEL
 
     @property
     def name(self) -> str:
-        return "deepseek"
+        return f"deepseek({self._model})"
 
     def complete(
         self,
@@ -100,7 +101,7 @@ class DeepSeekProvider(BaseLLMProvider):
         response_format: Optional[dict] = None,
     ) -> tuple[str, TokenUsage]:
         kwargs = {
-            "model": self.MODEL,
+            "model": self._model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
@@ -247,6 +248,7 @@ class FallbackProvider(BaseLLMProvider):
 def create_provider(
     prefer: str = "deepseek",
     enable_fallback: bool = True,
+    model: str = None,
 ) -> BaseLLMProvider:
     """
     创建 LLM 供应商实例。
@@ -254,6 +256,7 @@ def create_provider(
     Args:
         prefer: 首选供应商 ("deepseek" | "openai")
         enable_fallback: 是否启用 fallback
+        model: 指定模型名（None=默认），用于 cheap mode
 
     Returns:
         BaseLLMProvider 实例
@@ -262,31 +265,31 @@ def create_provider(
 
     if prefer == "deepseek":
         try:
-            providers.append(DeepSeekProvider())
+            providers.append(DeepSeekProvider(model=model))
         except RuntimeError as e:
             logger.warning(f"DeepSeek not available: {e}")
 
     if prefer == "openai" or (enable_fallback and not providers):
         try:
-            providers.append(OpenAIProvider())
+            providers.append(OpenAIProvider(model=model))
         except RuntimeError as e:
             logger.warning(f"OpenAI not available: {e}")
 
     if not enable_fallback and prefer == "deepseek":
         try:
-            providers.append(DeepSeekProvider())
+            providers.append(DeepSeekProvider(model=model))
         except RuntimeError:
             pass
 
     # Fallback: 如果首选不可用，尝试另一个
     if enable_fallback and prefer == "deepseek":
         try:
-            providers.append(OpenAIProvider())
+            providers.append(OpenAIProvider(model=model))
         except RuntimeError:
             pass
     elif enable_fallback and prefer == "openai":
         try:
-            providers.append(DeepSeekProvider())
+            providers.append(DeepSeekProvider(model=model))
         except RuntimeError:
             pass
 
@@ -298,3 +301,14 @@ def create_provider(
     if len(providers) == 1:
         return providers[0]
     return FallbackProvider(providers)
+
+
+def create_cheap_provider() -> BaseLLMProvider:
+    """
+    创建低成本 LLM 供应商（用于格式化/去重等非关键任务）。
+
+    策略：优先用 deepseek-chat（已是最便宜的推理模型之一），
+    若配置了其他低价 API 端点也可通过环境变量切换。
+    """
+    cheap_model = os.environ.get("CHEAP_LLM_MODEL", "deepseek-chat")
+    return create_provider(prefer="deepseek", enable_fallback=True, model=cheap_model)

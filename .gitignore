@@ -2,6 +2,7 @@
 reports/*
 pdfs/*
 *.pdf
+metrics.jsonl
 
 # Testing
 .pytest_cache/

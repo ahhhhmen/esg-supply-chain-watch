@@ -228,11 +228,18 @@ class ESGIntelligenceAgent:
    - 聚合后，必须产出一条最优的 core_event_title_en（标准英文摘要，用于去重）和一条精炼的 display_title_zh（中文标题，用于高管阅读）。
    - 严禁将同一事件的多个媒体报道拆分为多条独立 event。
 
-2. 降噪判定 (is_valid_risk)：
+2. 降噪判定 (is_valid_risk) — 宁可保留早期信号，不可漏过潜在风险：
    - 若实体错误（如"福特省长"、"福特医院"当成福特汽车），值为 false。
-   - 若为正面或无实质风险事件（如减碳成功、引入机器人提升效率、正常商业投资），值为 false。
-   - 若新闻涉及跨国供应链节点企业遭到属地政府、警方的正式合规调查（如环境污染调查、劳工纠纷调查、毒地/毒土处理调查、环保部门 Probe / Investigation），即使尚未引发物理停产或制裁，也必须判定为 true 并予以提取。
-   - 只有明确包含物理停摆（关厂/减产）、劳资冲突（罢工/抗议）、质量与安全（召回/事故）、强力制裁等负面冲击时，值才为 true。
+   - 若为纯正面事件（如减碳获奖、ESG评级提升、获RFI认证、引入机器人提升效率）、正常商业投资扩张、新产品发布，值为 false。
+   - 【早期预警信号 — 必须判定为 true】以下情形即使尚未引发物理停产或制裁，也必须判定为 true：
+     · 属地政府/警方/环保部门对该企业发起的正式合规调查、Probe、Investigation。
+     · 社区/居民/NGO 对该企业项目的公开抗议、反对或法律诉讼。
+     · 工会与企业之间的劳资谈判、罢工投票、集体协商僵局。
+     · 企业涉及的产品安全调查、召回程序启动（即便尚未公布具体缺陷）。
+     · 监管机构（SEC/FTC/EU/NHTSA/CBP）对该企业的新增审查、质询或警告。
+     · 涉及该企业供应链节点的出口管制、关税调整、实体清单变更。
+   - 以下可判定为 false：纯股价涨跌、财报亏损、CEO言论、基金调研、券商研报、M&A传闻（未证实）、产品参数披露、技术路线探讨。
+   - 【灰色地带判例】若不确定，倾向于判定为 true 并让下游 Python 管道做最终裁决。
 3. 严格分类 (risk_category) 与负面清单：
    - "早期合规预警"：属地政府/警方正式发起的环保调查、劳工合规审查、毒地/毒土处理 Probe、安全监察等尚未引发停产但已进入正式调查程序的早期合规阻力。此类别仅适用于调查/Probe/Investigation 性质的新闻，不适用于 NGO 指控或媒体质疑。
    - "供应链断裂预警"：仅限物理层面的供给中断（工厂因灾停产、矿端断供、核心供应商破产、物流瘫痪）。【负面清单】以下内容绝对不属于本类，必须归入 is_valid_risk=false 并直接丢弃：投资/股价波动、财报亏损、M&A/股权转让、需求疲软/销量下滑、新产品发布、技术合作、融资/增资。遇到这些话题时 risk_category 填入"无关噪音"且 is_valid_risk=false。
@@ -915,7 +922,6 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
             logger.info(
                 f"今日分析样本 {len(all_events)} 篇，命中合规红线 0 篇，执行静默阻断。"
             )
-            # 写入占位报告，覆盖旧日期残留报告，向使用者明确系统今日已成功巡检
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             if mode == "weekly":
                 title = "🏛️ ESG 全球地缘与合规周报 (Weekly Strategy Insight)"
@@ -923,12 +929,37 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
             else:
                 title = "🏛️ ESG 全球供应链动态日报 (Daily Intelligence)"
                 first_line = "全球供应链合规与风险速递"
+
+            # 汇总今日降噪事件，让报告有内容可读
+            noise_lines = []
+            for e in all_events[:8]:
+                entity = e.get("entity", "?") if isinstance(e, dict) else "?"
+                event_title = ""
+                if isinstance(e, dict):
+                    event_title = str(e.get("display_title_zh") or e.get("core_event_title_en") or e.get("core_event_title", ""))[:80]
+                if event_title:
+                    noise_lines.append(f"- **{entity}** {event_title}")
+            noise_section = ""
+            if noise_lines:
+                noise_section = "\n".join([
+                    "",
+                    "## 🔍 今日监测信号（未达风险阈值，已滤除）",
+                    "",
+                    f"系统共扫描 {len(all_events)} 条语义信号，以下为未命中合规红线的常规动态：",
+                    "",
+                    *noise_lines,
+                    "",
+                    "> 以上信号经 Python 确定性降噪流水线判定为非实质性材料冲击，已自动滤除。",
+                    "",
+                ])
+
             placeholder = "\n".join([
                 f"# {title}",
                 "",
                 f"> {first_line}",
                 f"> 📅 **生成时间**: {now_str}",
-                f"> 📊 **情报总数**: 0 条 | 涉及企业: 0 家",
+                f"> 📊 **情报总数**: 0 条 | 涉及企业: {len(set(e.get('entity', '') for e in all_events if isinstance(e, dict)))} 家",
+                f"> 📰 **扫描样本**: {len(all_events)} 篇语义信号 | 均未命中合规红线",
                 "",
                 "---",
                 "",
@@ -936,7 +967,7 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                 "",
                 "今日无新增实质性供应链断裂与合规风险。",
                 f"系统今日已成功巡检，分析样本 {len(all_events)} 篇，均未命中合规红线。",
-                "",
+                noise_section,
                 "---",
                 "",
                 "🤖 *本报告由 ESG Intelligence Agent 自动生成，数据来源于公开新闻源。*",
@@ -1168,6 +1199,32 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         valid_events = cls._merge_same_company_events(valid_events)
         if len(valid_events) < pre_merge:
             logger.info(f"Practice 语义合并: {pre_merge} -> {len(valid_events)}")
+
+        # ── 2.5. 静默阻断：本周无实践事件 ──
+        if not valid_events:
+            logger.info(f"Practice 模式: 本周分析 {len(all_events)} 篇，无可复制的良好实践，执行静默阻断。")
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            placeholder = "\n".join([
+                "# 🌱 同业良好实践周报 (Industry Best Practice Weekly)",
+                "",
+                f"> 📅 **生成时间**: {now_str}",
+                f"> 📊 **实践总数**: 0 条",
+                f"> 📰 **扫描样本**: {len(all_events)} 篇",
+                "",
+                "---",
+                "",
+                "## 📑 本周无可复制的良好实践",
+                "",
+                "本周扫描未发现可用于同业对标的创新实践或合规标杆案例。",
+                "系统将继续每周监控行业优秀做法。",
+                "",
+                "---",
+                "",
+                "🤖 *本报告由 ESG Intelligence Agent 自动生成，数据来源于公开新闻源。*",
+            ])
+            Path(report_path).write_text(placeholder, encoding="utf-8")
+            logger.info(f"Practice 静默阻断占位报告已写入: {report_path}")
+            return [], []
 
         # ── 3. 按实践分类分组（经 map_practice_category 归一化） ──
         from notion_mapping import map_practice_category as _norm_cat
@@ -2056,6 +2113,16 @@ Output only valid JSON array, no markdown."""
                 time.sleep(0.3)
 
         logger.info(f"Phase 3 done. Body text extracted: {extracted_count}/{len(self.articles)}")
+
+        # ── Phase 2.4: Spam/垃圾过滤 ───────────
+        pre_spam = len(self.articles)
+        self.articles = [
+            a for a in self.articles
+            if not EntityFilter.is_spam(a.title, a.url, a.raw_summary)
+        ]
+        spam_count = pre_spam - len(self.articles)
+        if spam_count:
+            logger.info(f"Phase 2.4 spam filter: {pre_spam} -> {len(self.articles)} ({spam_count} spam)")
 
         # ── Phase 2.5: Entity Presence Filter ───────────
         pre_filter_count = len(self.articles)

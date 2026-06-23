@@ -14,11 +14,11 @@ esg_sources:
     time_window: "24h"
     enabled: true
 
-  # 轨道3：静态 HTML 靶向 - 核心 NGO
+  # 轨道3：BHRRC 人权预警（Google News RSS — 原 HTML 靶向因 Cloudflare 403 已替换）
   - id: "target_bhrrc_latest"
-    type: "html"
-    url: "[https://www.business-humanrights.org/en/latest-news/](https://www.business-humanrights.org/en/latest-news/)"
-    dom_selector: "div.latest-news-list"
+    type: "google_news_rss"
+    query: 'site:business-humanrights.org AND ("mining" OR "cobalt" OR "lithium" OR "nickel" OR "battery" OR "labor rights")'
+    time_window: "7d"
     enabled: true
 
   # 轨道4：新增关键矿产巨头监控（紫金矿业等）

@@ -84,6 +84,8 @@ class AgentConfig:
     practice_companies: list[dict] = field(default_factory=list)
     practice_topics: list[dict] = field(default_factory=list)
     days_limit: int = 14
+    query_exclusions_risk: str = ""  # risk 模式排除词
+    query_exclusions_practice: str = ""  # practice 模式排除词
 
     # ── 工厂方法 ──────────────────────────────────────────
 
@@ -115,6 +117,8 @@ class AgentConfig:
             practice_companies=raw.get("practice_companies", []),
             practice_topics=raw.get("practice_topics", []),
             days_limit=raw.get("days_limit", 14),
+            query_exclusions_risk=str(raw.get("query_exclusions_risk", "")),
+            query_exclusions_practice=str(raw.get("query_exclusions_practice", "")),
         )
 
     # ── 企业显示名 ──────────────────────────────────────
@@ -197,8 +201,9 @@ class AgentConfig:
                         if not keywords:
                             continue
                         kw_query = self._build_keyword_query(keywords)
-                        full_query = f'"{search_term}" {kw_query} when:30d'
-                        query_encoded = quote(full_query)
+                        excl = f" {self.query_exclusions_practice}" if self.query_exclusions_practice else ""
+                        full_query = f'"{search_term}" {kw_query} when:{self.days_limit}d{excl}'
+                        query_encoded = quote(full_query, safe='/-:()"')
                         final_url = url_template.replace("{query}", query_encoded)
                         items.append(QueryItem(
                             url=final_url,
@@ -248,9 +253,10 @@ class AgentConfig:
                         continue
 
                     kw_query = self._build_keyword_query(keywords)
-                    # 组装完整查询: "公司名" (关键词1 OR 关键词2 ...) when:14d
-                    full_query = f'"{search_term}" {kw_query} when:14d'
-                    query_encoded = quote(full_query)
+                    # 组装完整查询: "公司名" (关键词1 OR 关键词2 ...) when:Nd -股票 -产品
+                    excl = f" {self.query_exclusions_risk}" if self.query_exclusions_risk else ""
+                    full_query = f'"{search_term}" {kw_query} when:{self.days_limit}d{excl}'
+                    query_encoded = quote(full_query, safe='/-:()"')
                     final_url = url_template.replace("{query}", query_encoded)
 
                     items.append(QueryItem(

@@ -354,17 +354,23 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
    - 聚合后，必须产出一条最优的 core_event_title_en（标准英文摘要，用于去重）和一条精炼的 display_title_zh（中文标题，用于高管阅读）。
    - 严禁将同一事件的多个媒体报道拆分为多条独立 event。
 
-2. 有效性判定 (is_valid_practice)：
-   - 若实体错误（如"比亚迪医院""丰田医院"），值为 false。
-   - 若事件为【纯负面/风险类】（罢工、污染、召回、制裁、罚款），值为 false。这些属于风险监控范畴，不属于良好实践。
-   - 若事件为【无实质内容的营销宣传】（如发布广告、赞助活动、老板言论），值为 false。
-   - 若事件为【股价波动/财报数据/投融资变动】，值为 false。这些不是可复制的"实践"。
-   - 只有明确包含以下类别之一的【具体行动和成果】时，值才为 true：
-     · 绿色制造成果：碳中和认证、绿电切换、零碳工厂投产、碳足迹显著下降
-     · 供应链合规标杆：通过 RMI/RBA/IRMA 等认证、发布冲突矿产报告、供应商行为准则升级
-     · 循环经济实践：电池回收产线投产、闭环回收率达 xx%、梯次利用项目落地
-     · ESG 披露与治理升级：CDP A-List 入选、MSCI 评级提升、发布首份 ESG 报告、设立董事会可持续发展委员会
-     · 技术创新突破：无钴/固态/钠离子电池量产、新型正极材料突破、回收工艺专利
+	2. 有效性判定 (is_valid_practice)：
+	   - 若实体错误（如"比亚迪医院""丰田医院"），值为 false。
+	   - 若事件为【纯负面/风险类】（罢工、污染、召回、制裁、罚款），值为 false。这些属于风险监控范畴，不属于良好实践。
+	   - 若事件为【营销/品牌宣传】（如发布广告、赞助活动、老板言论、品牌换新），值为 false。
+	   - 若事件为【产品发布/技术宣讲】（如"发布新款电池""推出新储能系统""展示概念车""召开技术发布会"），且无以下实质证据之一，值为 false：
+	     · 量产启动（注明日期或产能数据）
+	     · 第三方认证/测试机构出具的性能验证报告
+	     · 具体效率/密度/成本数字超出现有行业水平
+	     · 已获专利授权（非仅是"申请中"或"布局中"）
+	     解读要诀：产品发布 ≠ 可借鉴实践。如果新闻内容是"某公司推出某产品"，只描述产品功能而无可验证的技术突破指标，则 is_valid_practice = false。
+	   - 若事件为【股价波动/财报数据/投融资变动】，值为 false。这些不是可复制的"实践"。
+	   - 只有明确包含以下类别之一的【具体行动和成果】时，值才为 true：
+	     · 绿色制造成果：碳中和认证、绿电切换、零碳工厂投产、碳足迹显著下降
+	     · 供应链合规标杆：通过 RMI/RBA/IRMA 等认证、发布冲突矿产报告、供应商行为准则升级
+	     · 循环经济实践：电池回收产线投产、闭环回收率达 xx%、梯次利用项目落地
+	     · ESG 披露与治理升级：CDP A-List 入选、MSCI 评级提升、发布首份 ESG 报告、设立董事会可持续发展委员会
+	     · 技术创新突破：无钴/固态/钠离子电池量产、新型正极材料突破、回收工艺专利
 
 3. 实践分类 (practice_category) — 5 类标准化分类：
    - "绿色制造与减碳"：碳中和认证、绿电切换、零碳工厂、清洁生产、可再生能源使用
@@ -420,18 +426,30 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
       "is_valid_practice": true,
       "is_replicable": true
     }},
-    {{
-      "entity": "丰田汽车",
-      "core_event_title_en": "Toyota marketing campaign targets Gen-Z",
-      "display_title_zh": "丰田汽车针对Z世代开展营销活动",
-      "original_language": "英语",
-      "learning_insight": "纯品牌营销，非可复制实践",
-      "date": "2026-05-27",
-      "sources": [{{"name": "AdWeek", "url": "https://adweek.com/example"}}],
-      "practice_category": "技术创新与工艺升级",
-      "is_valid_practice": false,
-      "is_replicable": false
-    }}
+	    {{
+	      "entity": "宁德时代",
+	      "core_event_title_en": "CATL launches new sodium-ion energy storage system",
+	      "display_title_zh": "宁德时代推出Tener钠离子储能系统",
+	      "original_language": "中文",
+	      "learning_insight": "纯产品发布新闻，无量产数据、第三方认证或可验证的技术突破指标，非可复制实践。",
+	      "date": "2026-06-20",
+	      "sources": [{{"name": "36氪", "url": "https://36kr.com/example"}}],
+	      "practice_category": "技术创新与工艺升级",
+	      "is_valid_practice": false,
+	      "is_replicable": false
+	    }},
+	    {{
+	      "entity": "宁德时代",
+	      "core_event_title_en": "CATL announces two new battery safety technologies",
+	      "display_title_zh": "宁德时代发布两项新型电池安全技术",
+	      "original_language": "中文",
+	      "learning_insight": "技术宣讲/能力展示，无量产时间表、第三方测试数据或已授权专利证据，非可复制实践。",
+	      "date": "2026-06-21",
+	      "sources": [{{"name": "第一财经", "url": "https://yicai.com/example"}}],
+	      "practice_category": "技术创新与工艺升级",
+	      "is_valid_practice": false,
+	      "is_replicable": false
+	    }}
   ]
 }}
 

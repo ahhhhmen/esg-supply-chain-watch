@@ -53,7 +53,8 @@ from esg_agent.deduplication import JaccardMerger, LLMGlobalConvergence
 from esg_agent.reporters import MarkdownReportWriter
 from esg_agent.pdf_writer import convert_markdown_to_pdf
 from esg_agent.scorer import create_scorer, TavilyScorer
-from esg_agent.llm_provider import create_provider, create_cheap_provider, BaseLLMProvider, TokenUsage
+from radar_infra.llm import create_provider, create_cheap_provider, BaseLLMProvider, TokenUsage
+from radar_infra.llm import create_llm_retry_decorator
 
 # ─────────────────────────────────────────────────────────
 # 日志
@@ -152,7 +153,7 @@ class ESGIntelligenceAgent:
         max_tokens: int = 8192,
         response_format: Optional[dict] = None,
     ) -> Optional[str]:
-        """统一 LLM 调用入口，处理 provider fallback 和 usage 累积。"""
+        """统一 LLM 调用入口，含 tenacity 指数退避重试。"""
         if self._llm is None:
             try:
                 self._llm = create_provider()
@@ -160,15 +161,19 @@ class ESGIntelligenceAgent:
             except RuntimeError as e:
                 logger.error(f"LLM provider init failed: {e}")
                 return None
-        try:
-            content, usage = self._llm.complete(
+
+        @create_llm_retry_decorator(max_attempts=3)
+        def _do_call():
+            return self._llm.complete(
                 system_prompt, user_message, temperature, max_tokens, response_format,
             )
-            self._llm_usage = self._llm_usage + usage
-            return content
-        except Exception as e:
-            logger.warning(f"LLM call failed ({self._llm.name}): {e}")
+
+        result = _do_call()
+        if result is None:
             return None
+        content, usage = result
+        self._llm_usage = self._llm_usage + usage
+        return content
 
     def _call_llm_cheap(
         self,
@@ -178,7 +183,7 @@ class ESGIntelligenceAgent:
         max_tokens: int = 4096,
         response_format: Optional[dict] = None,
     ) -> Optional[str]:
-        """低成本 LLM 调用（用于格式化/去重等非关键任务）。"""
+        """低成本 LLM 调用（用于格式化/去重等非关键任务），含重试。"""
         if self._cheap_llm is None:
             try:
                 self._cheap_llm = create_cheap_provider()
@@ -188,15 +193,19 @@ class ESGIntelligenceAgent:
                 self._cheap_llm = self._llm  # 回退到主模型
         if self._cheap_llm is None:
             return None
-        try:
-            content, usage = self._cheap_llm.complete(
+
+        @create_llm_retry_decorator(max_attempts=2)
+        def _do_call():
+            return self._cheap_llm.complete(
                 system_prompt, user_message, temperature, max_tokens, response_format,
             )
-            self._llm_usage = self._llm_usage + usage
-            return content
-        except Exception as e:
-            logger.warning(f"Cheap LLM call failed ({self._cheap_llm.name}): {e}")
+
+        result = _do_call()
+        if result is None:
             return None
+        content, usage = result
+        self._llm_usage = self._llm_usage + usage
+        return content
 
     def _log_token_summary(self) -> str:
         summary = f"💰 Token 消耗: {self._llm_usage.summary()}"
@@ -2353,7 +2362,7 @@ Output only valid JSON array, no markdown."""
     def _collect_metrics(self, mode: str, elapsed: float, total_events: int, valid_events: int, final_items: int) -> None:
         """收集并持久化本次运行的监控指标。"""
         try:
-            from esg_agent.metrics import RunMetrics, MetricsStore
+            from radar_infra.support import RunMetrics, MetricsStore
             risk_dist = {}
             material_events = 0
             for e in self._last_valid_events:

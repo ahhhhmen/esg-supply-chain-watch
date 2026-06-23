@@ -22,6 +22,8 @@ slowapi
 limits
 # Notion
 notion-client
+# Radar infra (shared library)
+radar-infra @ git+https://github.com/ahhhhmen/radar-infra.git
 # Testing
 pytest>=8.0
 pytest-asyncio>=0.24

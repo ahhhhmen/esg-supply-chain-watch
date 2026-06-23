@@ -364,14 +364,20 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 	     · 具体效率/密度/成本数字超出现有行业水平
 	     · 已获专利授权（非仅是"申请中"或"布局中"）
 	     核心判据：展会展示/产品发布 ≠ 可借鉴实践。如果新闻只是"某公司在某场合展示了某产品"，无论产品参数多漂亮，只要没有量产、认证或专利授权等硬证据，is_valid_practice = false。
+	   - 若事件为【纯技术专利申请】（如"申请了专利""专利布局中""专利公开号""专利进入实审"），而非已授权专利，值为 false。专利申请 ≠ 已验证的技术成果。只有明确获得授权的专利（含专利号或授权公告）才可作为有效证据。
 	   - 若事件为【股权投资/参股入股】（如"入股""参股""投资""收购股权""战略投资"某公司），值为 false。财务投资不是可复制的运营实践，即使投资对象属于绿色/低碳领域。
 	   - 若事件为【股价波动/财报数据】，值为 false。
-	   - 只有明确包含以下类别之一的【具体行动和成果】时，值才为 true：
-	     · 绿色制造成果：碳中和认证、绿电切换、零碳工厂投产、碳足迹显著下降
-	     · 供应链合规标杆：通过 RMI/RBA/IRMA 等认证、发布冲突矿产报告、供应商行为准则升级
-	     · 循环经济实践：电池回收产线投产、闭环回收率达 xx%、梯次利用项目落地
-	     · ESG 披露与治理升级：CDP A-List 入选、MSCI 评级提升、发布首份 ESG 报告、设立董事会可持续发展委员会
-	     · 技术创新突破：无钴/固态/钠离子电池量产、新型正极材料突破、回收工艺专利
+	   - 只有同时满足"事件类别匹配 + 包含具体成果证据"时，值才为 true。以下是各分类的准入门槛：
+	     【机制创新级别——准入门槛最高】
+	     · 行业首家通过某权威认证（如首家通过 IRMA 50 标准）
+	     · 发布可复现的方法论或开源标准（如零碳工厂建设标准白皮书、供应链尽责管理手册）
+	     · 建立行业首个某类治理机制（如首个董事会可持续发展委员会、首个供应链碳排放监测平台）
+	     【成果落地级别——准入门槛中等】
+	     · 绿色制造：碳中和认证、绿电切换、零碳工厂投产、碳足迹显著下降
+	     · 供应链合规：通过 RMI/RBA/IRMA 等认证、发布冲突矿产报告、供应商行为准则升级
+	     · 循环经济：电池回收产线投产、闭环回收率达 xx%、梯次利用项目落地
+	     · ESG 治理：CDP A-List 入选、MSCI 评级提升、发布首份 ESG 报告
+	     · 技术创新：**已授权**专利（非申请中）、无钴/固态/钠离子电池量产、新材料通过验证
 
 	3. 实践分类 (practice_category) — 5 类标准化分类及边界规则：
 
@@ -1235,6 +1241,32 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
             f"Practice 降噪: {len(invalid_events)} invalid -> dropped, {len(valid_events)} valid -> report"
         )
 
+        # ── 1.5. 洞察熔断（Python 物理隔绝，宁缺毋滥） ──
+        # 即使 is_valid_practice=true，若 LLM 未生成有效洞察，仍予废弃
+        before_melt = len(valid_events)
+        quality_events: list[dict] = []
+        for event in valid_events:
+            insight = str(event.get("learning_insight", "")).strip()
+            # 空字符串 / 占位符 / 过短 / 仅为格式模板 → 直接剔除
+            if (
+                not insight
+                or "待进一步分析" in insight
+                or len(insight) < 15
+                or insight.startswith("客观事实")
+            ):
+                logger.info(
+                    f"[practice 熔断] 洞察无效: {event.get('entity', '?')} | "
+                    f"insight={insight[:40] or '<empty>'}"
+                )
+                continue
+            quality_events.append(event)
+        valid_events = quality_events
+        melted = before_melt - len(valid_events)
+        if melted > 0:
+            logger.info(f"Practice 洞察熔断: {melted} 条因无有效洞察被废弃")
+        if not valid_events:
+            logger.info("Practice 熔断：本周所有实践事件洞察均不合格，生成占位报告。")
+
         # ── 2. 同公司同质化事件语义合并 ──
         pre_merge = len(valid_events)
         valid_events = cls._merge_same_company_events(valid_events)
@@ -1356,12 +1388,11 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                 else:
                     sources_str = "Unknown"
 
-                lines.append(f"**{entity} | {title_text}**")
-                lines.append("")
+                lines.append(f"**{entity}** | *{title_text}*")
+                lines.append(f"> 📅 {date} | 📰 {sources_str}")
                 if learning:
-                    lines.append(f"💡 学习要点：{learning}")
-                    lines.append("")
-                lines.append(f"{replicable_badge} · 📅 {date} · 📰 {sources_str}")
+                    lines.append(f"> 💡 **可借鉴点**：{learning}")
+                lines.append(f"> {replicable_badge}")
                 lines.append("")
                 lines.append("---")
                 lines.append("")
@@ -1811,10 +1842,11 @@ Output only valid JSON array, no markdown."""
                 date = str(e.get("date", ""))[:10]
                 is_rep = "✅" if e.get("is_replicable") else "📋"
 
-                lines.append(f"**{entity} | {title_text}**")
+                lines.append(f"**{entity}** | *{title_text}*")
+                lines.append(f"> 📅 {date}")
                 if learning and learning != "（待进一步分析）":
-                    lines.append(f"💡 {learning}")
-                lines.append(f"{is_rep} · 📅 {date}")
+                    lines.append(f"> 💡 **可借鉴点**：{learning}")
+                lines.append(f"> {is_rep}")
                 lines.append("")
 
             remaining = len(evs) - 5

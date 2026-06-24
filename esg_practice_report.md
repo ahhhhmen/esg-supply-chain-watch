@@ -1,41 +1,24 @@
 # 🌱 同业良好实践周报 (Industry Best Practice Weekly)
 
-> 📅 **生成时间**: 2026-06-23 06:21:36
-> 📊 **实践总数**: 3 条 | 涉及企业: 1 家
-> 📆 **覆盖时段**: 2026-06-23 ~ 2026-06-23
+> 📅 **生成时间**: 2026-06-24 23:02:01
+> 📊 **实践总数**: 1 条 | 涉及企业: 1 家
+> 📆 **覆盖时段**: 2026-06-24 ~ 2026-06-24
 
 ---
 
 ## 📑 目录
 
-- 📊 **ESG披露与治理**（3 条）
+- 💡 **技术创新与工艺升级**（1 条）
 
 ---
 
-## 📊 ESG披露与治理
-> 首份 ESG 报告发布、CDP A-List、MSCI 评级提升、治理架构优化的具体路径
+## 💡 技术创新与工艺升级
+> 无钴/固态/钠离子电池量产、新型正极材料突破、回收工艺专利
 
-**宁德时代 | 宁德时代在链博会发布天恒钠电储能系统，-50℃稳定放电**
-
-💡 学习要点：（待进一步分析）
-
-📋 参考了解 · 📅 2026-06-23 · 📰 [证券之星](https://news.google.com/rss/articles/CBMiXkFVX3lxTFBtUkl2Y3NWSV9jbTdwNGdFN0RCS1BiLU93OHZvajY4TTJXajN2YXI2U2ZOckMxTk02dERDdm9pRG9Oc21rczhJZlRDYklvaFRpNGhONUdFU2FUYm5SMmc) · [搜狐网](https://news.google.com/rss/articles/CBMiiAFBVV95cUxNV1AxUUd0SE9ZV20zYTVSajNYUlVwQ3N2V19ha2V6LTVMcUZBRjkyazc0aHRTSC13NWU4T3NSSWFqdzdzNU1COGFrSDByMUphY0pjQWVaZnZhbjhpQVNpZk5KNHdrVVVOYWxZQnZ0V1hxMFdsa0dzN1NxN3l1RzA4NTI3VWhuQ2lS) · 等 4 家
-
----
-
-**宁德时代 | 宁德时代获得两项电池安全设计专利**
-
-💡 学习要点：（待进一步分析）
-
-📋 参考了解 · 📅 2026-06-23 · 📰 [Sultra Media](https://news.google.com/rss/articles/CBMigAFBVV95cUxPT3N5amhEcGdqbllCUUF5Ti1reEJ6UEhNZXVCZlVXR2phZlJKQzFsMUtraWlJS2MtRnpJSGxUTXJyNlhYVElMX1g4dUQtdVhiaGhGN2hyRDFySDY2Sno2VkFNWDR2NWUtbE1KQW9aVFVWMHJ5cWZpSW9QMjV1OWM3UQ) · [MediaKompeten](https://news.google.com/rss/articles/CBMihAFBVV95cUxQbU03Mkx6WXhOZ1hHdXp6STNNOFFmWUhRXzM2UEpjYlA4RG1LVnFPdlRiZUpNZFpNQURwbDV2V01VNDRhMXhwb3FKTFZSRW5kcEhkYUtxck1WQUNvVm83LU5ISWZ6SG53SVdrZjhlZGxDS0xPVnJFNEhlcWtnTVZubk5tcDI)
-
----
-
-**宁德时代 | 宁德时代、阳光电源入股碳科技企业碳生万物**
-
-💡 学习要点：（待进一步分析）
-
-📋 参考了解 · 📅 2026-06-23 · 📰 [caiwennews.com](https://news.google.com/rss/articles/CBMiXEFVX3lxTE9PZDBTdGpHUWxrWEk3YlZMYkVjcTBXX0hCemFxY1JsbVd4bXRmMFg4VG9hZ2czVjFuMkNJYWEyYW1rUC1QWDJzTDJrTi1yRTFkbmRSTUVOSkRidUhU)
+**宁德时代** | *宁德时代推出全球首个现场验证的钠离子电池储能系统*
+> 📅 2026-06-24 | 📰 [Newswire Canada](https://news.google.com/rss/articles/CBMimwJBVV95cUxNQ0o0OTktOVpoenNDSi1HSkZjZW5lMjcwOC1pYS0zMV92aWJ2NW9feTlNU1JfUkZGb2s0YWJ2QUQwM2N1bnhDa0dJUzNsMXc5Wkt6SWhFQUp2bnJ6UjJzT0NaU2dlZTR1TWJMODN5bUsyNE1pZjVhM3ZJYmlDS1F6THZ1VDNJTnQ1UHN3ZWdrTmRUM1p4dnJseFE5c0lvankyTU5SSVl6WWhaYWh6Z2JKcDFvTWxRNzJ6LV84UklON2o2dlU1TlIwUkdXTEkwOGFkZWZLLV9rYkp2MnRIVHhYNlpiTnN5TWRKNlhKSmw4UGNOTW92VDduSTRPSWY1VGZBWFFfNkQzbDlZOHpKMlVyaHI2NkhJeFFaeXFB)
+> 💡 **可借鉴点**：CATL推出全球首个经现场验证的钠离子BESS，实现商业化。华友可关注其钠电正极材料需求，提前布局钠电前驱体研发与产能，抢占新兴市场。
+> ✅ 可借鉴
 
 ---
 
@@ -46,4 +29,4 @@
 
 ---
 
-💰 Token 消耗: in=11,680 out=3,148 total=14,828 cost=$0.0025
+💰 Token 消耗: in=14,183 out=1,047 total=15,230 cost=$0.0023

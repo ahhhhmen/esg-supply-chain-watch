@@ -1054,10 +1054,15 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         # ── 3. 推断时间跨度 ──
         all_dates = [e.get("date", "") for e in valid_events]
         if all_dates:
-            dmin = min(all_dates)
             dmax = max(all_dates)
         else:
-            dmin = dmax = "?"
+            dmax = datetime.now().strftime("%Y-%m-%d")
+        # 周报模式：start_date 严格 = end_date - 7d，确保表头显示 7 天跨度
+        if mode == "weekly":
+            end_dt = datetime.strptime(dmax, "%Y-%m-%d") if dmax != "?" else datetime.now()
+            dmin = (end_dt - timedelta(days=7)).strftime("%Y-%m-%d")
+        else:
+            dmin = min(all_dates) if all_dates else dmax
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         # 严格按 mode 参数决定标题 — daily/weekly 绝对互斥，禁止自动推断
@@ -1324,8 +1329,10 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
 
         # ── 4. 推断时间跨度 ──
         all_dates = [e.get("date", "") for e in valid_events]
-        dmin = min(all_dates) if all_dates else "?"
-        dmax = max(all_dates) if all_dates else "?"
+        dmax = max(all_dates) if all_dates else datetime.now().strftime("%Y-%m-%d")
+        # 实践周报：start_date 严格 = end_date - 7d，确保表头显示 7 天跨度
+        end_dt = datetime.strptime(dmax, "%Y-%m-%d") if dmax != "?" else datetime.now()
+        dmin = (end_dt - timedelta(days=7)).strftime("%Y-%m-%d")
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # ── 5. 生成 Markdown 报告 ──
@@ -1911,8 +1918,13 @@ Output only valid JSON array, no markdown."""
             else:
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
                 all_dates = [e.get("date", "") for e in valid_events]
-                dmin = min(all_dates) if all_dates else "?"
-                dmax = max(all_dates) if all_dates else "?"
+                dmax = max(all_dates) if all_dates else datetime.now().strftime("%Y-%m-%d")
+                # 周报/实践模式：start_date = end_date - 7d
+                if mode in ("weekly", "practice"):
+                    end_dt = datetime.strptime(dmax, "%Y-%m-%d") if dmax != "?" else datetime.now()
+                    dmin = (end_dt - timedelta(days=7)).strftime("%Y-%m-%d")
+                else:
+                    dmin = min(all_dates) if all_dates else dmax
                 if mode == "practice":
                     ding_content = self._format_practice_for_dingtalk(
                         valid_events, now_str, dmin, dmax,
@@ -2089,10 +2101,13 @@ Output only valid JSON array, no markdown."""
                 "url": task.url,
                 "source_id": f"matrix_{task.track_label}_{task.lang}",
             })
-        dynamic_items = engine.fetch_from_prebuilt_urls(dynamic_urls, time_window="24h")
+        # practice/weekly 使用 7 天窗口，daily 使用 24 小时窗口
+        dyn_time_window = "7d" if mode in ("weekly", "practice") else "24h"
+        dynamic_items = engine.fetch_from_prebuilt_urls(dynamic_urls, time_window=dyn_time_window)
 
-        # 1c. AI 动态发现查询
-        ai_items = engine.fetch_from_prebuilt_urls(ai_discovery_urls, time_window="24h")
+        # 1c. AI 动态发现查询（仅 daily 模式触发，使用对应时间窗）
+        ai_time_window = "7d" if mode in ("weekly", "practice") else "24h"
+        ai_items = engine.fetch_from_prebuilt_urls(ai_discovery_urls, time_window=ai_time_window)
 
         # 合并所有来源
         all_raw_items = raw_items + dynamic_items + ai_items

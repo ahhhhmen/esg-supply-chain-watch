@@ -1935,6 +1935,14 @@ Output only valid JSON array, no markdown."""
                         weekly_review_text=self._weekly_review_text if mode == "weekly" else None,
                     )
 
+            # 底部追加 Notion 数据库链接
+            db_id = os.environ.get(
+                "NOTION_PRACTICE_DATABASE_ID" if mode == "practice" else "NOTION_DATABASE_ID", ""
+            )
+            if db_id:
+                notion_url = f"https://notion.so/{db_id[0:8]}-{db_id[8:12]}-{db_id[12:16]}-{db_id[16:20]}-{db_id[20:32]}"
+                ding_content += f"\n\n📋 [查看完整数据库]({notion_url})"
+
             headers = {"Content-Type": "application/json"}
             data = {"msgtype": "markdown", "markdown": {"title": ding_title, "text": ding_content}}
             logger.info("正在向钉钉发送情报简报...")

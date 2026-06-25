@@ -1940,7 +1940,7 @@ Output only valid JSON array, no markdown."""
                 "NOTION_PRACTICE_DATABASE_ID" if mode == "practice" else "NOTION_DATABASE_ID", ""
             )
             if db_id:
-                notion_url = f"https://notion.so/{db_id[0:8]}-{db_id[8:12]}-{db_id[12:16]}-{db_id[16:20]}-{db_id[20:32]}"
+                notion_url = f"https://app.notion.com/p/fangxie/{db_id}"
                 ding_content += f"\n\n📋 [查看完整数据库]({notion_url})"
 
             headers = {"Content-Type": "application/json"}

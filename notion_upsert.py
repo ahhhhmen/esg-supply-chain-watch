@@ -159,6 +159,9 @@ def build_notion_properties(event: dict) -> dict:
         "Sources": {
             "rich_text": [{"text": {"content": sources_text}}]
         },
+        "Materiality": {
+            "select": {"name": event.get("materiality", "🔴 直接材料冲击")}
+        },
         "Mode": {
             "select": {"name": event.get("mode", "")}
         },

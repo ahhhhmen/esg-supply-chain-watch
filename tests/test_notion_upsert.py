@@ -116,6 +116,18 @@ class TestBuildNotionProperties:
         # 关键词"罢工"应映射为劳工权益
         assert props["Risk Category"]["select"]["name"] == "劳工权益"
 
+    def test_materiality_mapping(self, sample_event):
+        """验证 Materiality 字段正确映射。"""
+        # 默认值
+        props1 = build_notion_properties(sample_event)
+        assert props1["Materiality"]["select"]["name"] == "🔴 直接材料冲击"
+
+        # 显式设定
+        sample_event["materiality"] = "🟡 战略观察"
+        props2 = build_notion_properties(sample_event)
+        assert props2["Materiality"]["select"]["name"] == "🟡 战略观察"
+
+
 
 # ── upsert_notion_page tests ──────────────────────────────
 

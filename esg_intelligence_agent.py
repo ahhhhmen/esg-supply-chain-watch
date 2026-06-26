@@ -2203,21 +2203,41 @@ Output only valid JSON array, no markdown."""
         self.articles = [NewsArticle(**row.to_dict()) for _, row in df_tmp.iterrows()]
         logger.info(f"Phase 2 dedup (title+norm_url): {raw_count} -> {len(self.articles)} articles")
 
-        # ── Phase 3: Deep Content Extraction ────────────
-        logger.info(f"Phase 3: Extracting body text from {len(self.articles)} articles...")
-        extracted_count = 0
-        for idx, article in enumerate(self.articles):
+        # ── Phase 3: Deep Content Extraction (并发版) ────────────
+        logger.info(f"Phase 3: Extracting body text from {len(self.articles)} articles (concurrent)...")
+
+        from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _as_completed
+
+        def _extract_one(idx_article):
+            idx, article = idx_article
             body = ContentExtractor.extract(article.url)
-            if body:
-                article.raw_summary = body
-                extracted_count += 1
-            else:
-                desc = article.description.strip()
-                if desc and desc != article.title and len(desc) > 15:
-                    article.raw_summary = desc[:200]
-            if (idx + 1) % 10 == 0:
-                logger.info(f"  Progress: {idx + 1}/{len(self.articles)}")
-                time.sleep(0.3)
+            return idx, body
+
+        _EXTRACT_WORKERS = 10  # 正文抓取比 RSS 更重，保守设置 10 workers
+        extracted_count = 0
+
+        with _TPE(max_workers=_EXTRACT_WORKERS) as executor:
+            futures = {
+                executor.submit(_extract_one, (idx, article)): article
+                for idx, article in enumerate(self.articles)
+            }
+            done_count = 0
+            for future in _as_completed(futures):
+                try:
+                    idx, body = future.result()
+                    article = self.articles[idx]
+                    if body:
+                        article.raw_summary = body
+                        extracted_count += 1
+                    else:
+                        desc = article.description.strip()
+                        if desc and desc != article.title and len(desc) > 15:
+                            article.raw_summary = desc[:200]
+                except Exception:
+                    pass
+                done_count += 1
+                if done_count % 20 == 0:
+                    logger.info(f"  Progress: {done_count}/{len(self.articles)}")
 
         logger.info(f"Phase 3 done. Body text extracted: {extracted_count}/{len(self.articles)}")
 

@@ -12,7 +12,7 @@ on:
 jobs:
   run-practice-monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
     # 1. 检出仓库代码

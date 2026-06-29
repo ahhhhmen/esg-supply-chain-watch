@@ -2085,13 +2085,23 @@ Output only valid JSON array, no markdown."""
                 )
                 basis = str(e.get("materiality_basis", "")).strip() or "公开信息指向材料端直接传导"
 
-                lines.append(f"{severity} **{e.get('materiality', '🔴 直接材料冲击')} · {entity} | {title_text}**")
-                lines.append(f"> 判定依据：{basis}")
-                lines.append("")
-                lines.append(f"{insight}")
-                lines.append("")
+                clean_link = ""
+                sources_list = e.get("sources", [])
+                if isinstance(sources_list, list):
+                    for s in sources_list:
+                        if isinstance(s, dict):
+                            url_val = str(s.get("url", "")).strip()
+                            if url_val.lower().startswith("http"):
+                                clean_link = url_val
+                                break
+                title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
+
+                lines.append(f"{severity} **{e.get('materiality', '🔴 直接材料冲击')} · {entity}** | {title_link}")
+                lines.append(f"> 💡 **判定依据**：{basis}")
+                if insight:
+                    lines.append(f"> 🧠 **高管洞察**：{insight}")
                 source_stat = f"{source_count} 家去重来源" if source_count else "来源未识别"
-                lines.append(f"📅 {date} · 📰 {source_stat}：{sources_str}")
+                lines.append(f"> 🏷️ {cat} | 📅 {date} | 📰 {source_stat}：{sources_str}")
                 lines.append("")
                 lines.append("━━━━━━━━━━━━━━━━━━━━")
                 lines.append("")
@@ -2127,12 +2137,24 @@ Output only valid JSON array, no markdown."""
                 sources_str, source_count = cls._format_sources_for_dingtalk(e.get("sources", []), event_lang)
                 basis = str(e.get("materiality_basis", "")).strip() or "传导链暂未触及上游电池材料端"
                 insight = str(e.get("executive_insight", "")).strip()
-                lines.append(f"⚪ **🟡 战略观察 · {entity}** · {title_text}")
-                lines.append(f"> 判定依据：{basis}")
+
+                clean_link = ""
+                sources_list = e.get("sources", [])
+                if isinstance(sources_list, list):
+                    for s in sources_list:
+                        if isinstance(s, dict):
+                            url_val = str(s.get("url", "")).strip()
+                            if url_val.lower().startswith("http"):
+                                clean_link = url_val
+                                break
+                title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
+
+                lines.append(f"⚪ **🟡 战略观察 · {entity}** | {title_link}")
+                lines.append(f"> 💡 **判定依据**：{basis}")
                 if insight:
-                    lines.append(f"> {insight}")
+                    lines.append(f"> 🧠 **高管洞察**：{insight}")
                 source_stat = f"{source_count} 家去重来源" if source_count else "来源未识别"
-                lines.append(f"> 📅 {date} | 🏷️ {cat} | 📰 {source_stat}：{sources_str}")
+                lines.append(f"> 🏷️ {cat} | 📅 {date} | 📰 {source_stat}：{sources_str}")
                 lines.append("")
             if len(ding_watch) > 5:
                 lines.append(f"> *...等共 {len(ding_watch)} 条，完整内容见周报文件及 Notion 数据库*")

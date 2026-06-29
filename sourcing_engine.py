@@ -4,6 +4,7 @@ SourcingEngine — 声明式配置驱动的 ESG 多轨道供料引擎。
 支持 Google News RSS 动态搜索 和 静态 HTML 靶向抓取 两种轨道。
 """
 
+import base64
 import logging
 import re
 import time
@@ -38,6 +39,26 @@ class SourcingEngine:
             self.version,
             len(self.sources),
         )
+
+    def _decode_google_news_url(self, url: str) -> str:
+        if "news.google.com/rss/articles/" not in url:
+            return url
+        match = re.search(r'articles/([^?]+)', url)
+        if match:
+            encoded_str = match.group(1)
+            padding = 4 - (len(encoded_str) % 4)
+            if padding != 4:
+                encoded_str += "=" * padding
+            try:
+                decoded_bytes = base64.urlsafe_b64decode(encoded_str)
+                # Google 的 payload 混合了不可见字符，使用正则直接提取其中的 http 链接
+                decoded_str = decoded_bytes.decode('latin1')
+                url_match = re.search(r'(https?://[^\s\x00-\x1f\x7f-\xff]+)', decoded_str)
+                if url_match:
+                    return url_match.group(1)
+            except Exception:
+                pass
+        return url
 
     # ------------------------------------------------------------------
     # Public API
@@ -124,7 +145,9 @@ class SourcingEngine:
                         continue
 
                     title = getattr(feed_entry, "title", "")
-                    link = resolve_news_url(getattr(feed_entry, "link", ""))
+                    raw_link = getattr(feed_entry, "link", "")
+                    decoded_link = self._decode_google_news_url(raw_link)
+                    link = resolve_news_url(decoded_link)
                     summary = getattr(feed_entry, "summary", "")
                     content_body = f"{title}\n{summary}".strip()
 
@@ -238,7 +261,9 @@ class SourcingEngine:
                 continue
 
             title = getattr(entry, "title", "")
-            link = resolve_news_url(getattr(entry, "link", ""))
+            raw_link = getattr(entry, "link", "")
+            decoded_link = self._decode_google_news_url(raw_link)
+            link = resolve_news_url(decoded_link)
             summary = getattr(entry, "summary", "")
             content_body = f"{title}\n{summary}".strip()
 

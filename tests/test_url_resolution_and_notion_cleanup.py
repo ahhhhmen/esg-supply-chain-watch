@@ -25,6 +25,17 @@ def test_resolve_news_url_uses_query_param_without_network():
     assert resolve_news_url(url) == "https://example.com/article"
 
 
+def test_resolve_news_url_decodes_google_news_locally():
+    target_url = "https://www.business-humanrights.org/en/latest-news/global-mineral-tracker-2026"
+    fake_protobuf = b"\x08\x01\x12\x4b" + target_url.encode('utf-8') + b"\x1a\x05stuff"
+    import base64
+    encoded = base64.urlsafe_b64encode(fake_protobuf).decode('utf-8').rstrip('=')
+    google_url = f"https://news.google.com/rss/articles/{encoded}"
+    resolved = resolve_news_url(google_url)
+    assert resolved == target_url
+
+
+
 def test_resolve_news_url_gets_original_from_html(monkeypatch):
     google_url = "https://news.google.com/rss/articles/example"
     original = "https://publisher.example.com/story"

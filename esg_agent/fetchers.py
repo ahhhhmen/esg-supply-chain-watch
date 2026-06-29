@@ -72,6 +72,24 @@ def resolve_news_url(url: str, timeout: int = 5) -> str:
     if not url or "news.google.com" not in url:
         return url
 
+    if "news.google.com/rss/articles/" in url:
+        import base64
+        match = re.search(r'articles/([^?]+)', url)
+        if match:
+            encoded_str = match.group(1)
+            padding = 4 - (len(encoded_str) % 4)
+            if padding != 4:
+                encoded_str += "=" * padding
+            try:
+                decoded_bytes = base64.urlsafe_b64decode(encoded_str)
+                decoded_str = decoded_bytes.decode('latin1')
+                url_match = re.search(r'(https?://[^\s\x00-\x1f\x7f-\xff]+)', decoded_str)
+                if url_match:
+                    return url_match.group(1)
+            except Exception:
+                pass
+
+
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     for key in ("url", "u", "q"):

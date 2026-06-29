@@ -785,6 +785,154 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
     # ── 语义合并常量 ──────────────────────────────────────
     _MERGE_SIMILARITY_THRESHOLD = 0.45  # Jaccard 相似度阈值：>= 此值视为同一事件
     _WORD_PATTERN = re.compile(r"\w+", re.UNICODE)
+    _OEM_RESTRUCTURING_RE = re.compile(
+        r"裁员|关厂|关闭工厂|工厂关闭|关闭.*工厂|成本削减|削减成本|重组|结构调整|工会反对|工会|"
+        r"layoff|job cut|job cuts|plant closure|factory closure|close .* plant|close .* factory|"
+        r"cost cut|cost-cut|restructuring|union opposition|union",
+        re.IGNORECASE,
+    )
+    _MATERIAL_PROMOTION_RE = re.compile(
+        r"电池工厂.*(停产|关闭|停工)|动力电池.*(停产|召回|起火)|电动车.*(停产|减产)|"
+        r"电动汽车.*(停产|减产)|电池材料.*(订单|削减|取消|断供)|前驱体.*(订单|削减|取消)|"
+        r"正极材料.*(订单|削减|取消)|采购.*(取消|削减)|供应商订单.*(取消|削减)|"
+        r"进口禁令|出口禁令|扣留|实体清单|强迫劳动|"
+        r"battery plant.*(shutdown|halt|closure|fire)|gigafactory.*(shutdown|halt|closure|fire)|"
+        r"EV production.*(shutdown|halt|cut|suspend)|electric vehicle production.*(shutdown|halt|cut|suspend)|"
+        r"battery material.*(order|procurement|supplier).*(cut|cancel|halt)|"
+        r"procurement.*(cut|cancel|halt)|supplier order.*(cut|cancel)|import ban|export ban|"
+        r"entity list|forced labor|withhold release order|WRO|CBP",
+        re.IGNORECASE,
+    )
+    _ADVISORY_RE = re.compile(
+        r"需关注|持续关注|建议|应当|需要|可考虑|可能影响运营",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _event_text(cls, event: dict) -> str:
+        fields = [
+            event.get("entity", ""),
+            event.get("core_event_title_en", event.get("core_event_title", "")),
+            event.get("display_title_zh", ""),
+            event.get("executive_insight", ""),
+            event.get("risk_category", ""),
+        ]
+        return " ".join(str(f) for f in fields if f)
+
+    @classmethod
+    def _is_oem_restructuring_without_material_trigger(cls, event: dict) -> bool:
+        text = cls._event_text(event)
+        return bool(cls._OEM_RESTRUCTURING_RE.search(text)) and not bool(
+            cls._MATERIAL_PROMOTION_RE.search(text)
+        )
+
+    @classmethod
+    def _sanitize_executive_insight(cls, event: dict) -> None:
+        insight = str(event.get("executive_insight", "")).strip()
+        if not insight:
+            return
+        replacements = {
+            "需关注": "该事件需纳入观察",
+            "持续关注": "后续变化作为观察变量",
+            "建议": "可作为内部研判变量",
+            "应当": "可",
+            "需要": "可",
+            "可考虑": "可作为观察变量",
+            "可能影响运营": "运营传导尚未确认",
+        }
+        for bad, repl in replacements.items():
+            insight = insight.replace(bad, repl)
+        if cls._ADVISORY_RE.search(insight):
+            title = str(event.get("display_title_zh") or event.get("core_event_title_en") or "该事件").strip()
+            materiality = event.get("materiality", "🟡 战略观察")
+            insight = (
+                f"{title}。当前材料性判定为{materiality}，公开信息尚不足以支持更强传导结论。"
+            )
+        event["executive_insight"] = insight
+
+    @classmethod
+    def _apply_materiality_guardrails(cls, event: dict) -> dict:
+        """Apply deterministic materiality rules after LLM extraction."""
+        if not isinstance(event, dict) or event.get("is_valid_risk") is False:
+            return event
+
+        text = cls._event_text(event)
+        if cls._MATERIAL_PROMOTION_RE.search(text):
+            event["is_direct_material_impact"] = True
+            event["materiality"] = "🔴 直接材料冲击"
+            event["materiality_basis"] = "公开信息指向电池/材料订单、生产或准入限制"
+        elif cls._is_oem_restructuring_without_material_trigger(event):
+            event["is_direct_material_impact"] = False
+            event["materiality"] = "🟡 战略观察"
+            event["materiality_basis"] = "未确认电动车、电池工厂或材料订单直接受影响"
+            title = str(
+                event.get("display_title_zh")
+                or event.get("core_event_title_en")
+                or "该事件"
+            ).strip()
+            event["executive_insight"] = (
+                f"{title}，反映整车端成本压力和劳资摩擦。当前公开信息未确认电动车或电池材料订单削减，暂列战略观察而非直接材料冲击。"
+            )
+        else:
+            if event.get("is_direct_material_impact") is False:
+                event["materiality"] = "🟡 战略观察"
+                event.setdefault("materiality_basis", "传导链暂未触及上游电池材料端")
+            else:
+                event["is_direct_material_impact"] = True
+                event["materiality"] = "🔴 直接材料冲击"
+                event.setdefault("materiality_basis", "LLM判定存在材料端直接传导")
+
+        cls._sanitize_executive_insight(event)
+        return event
+
+    @classmethod
+    def _is_restructuring_duplicate(cls, base: dict, other: dict) -> bool:
+        base_text = cls._event_text(base)
+        other_text = cls._event_text(other)
+        if not (cls._OEM_RESTRUCTURING_RE.search(base_text) and cls._OEM_RESTRUCTURING_RE.search(other_text)):
+            return False
+        combined = f"{base_text} {other_text}".lower()
+        anchors = [
+            "volkswagen", "大众", "germany", "德国", "plant closure", "关闭工厂",
+            "关厂", "factory closure", "layoff", "裁员",
+        ]
+        anchor_hits = sum(1 for a in anchors if a.lower() in combined)
+        same_date = str(base.get("date", ""))[:10] == str(other.get("date", ""))[:10]
+        return same_date and anchor_hits >= 2
+
+    @classmethod
+    def _choose_richer_event(cls, base: dict, other: dict) -> dict:
+        def score(event: dict) -> int:
+            title = str(event.get("display_title_zh") or event.get("core_event_title_en") or "")
+            insight = str(event.get("executive_insight", ""))
+            sources = event.get("sources", [])
+            source_count = len(sources) if isinstance(sources, list) else 0
+            richness_terms = ("工会", "关闭", "关厂", "德国", "plant", "closure", "union")
+            richness = sum(10 for term in richness_terms if term.lower() in title.lower())
+            return len(title) + min(len(insight), 120) + source_count * 8 + richness
+
+        return other if score(other) > score(base) else base
+
+    @classmethod
+    def _merge_event_sources(cls, base: dict, others: list[dict]) -> list[dict]:
+        all_sources: list[dict] = []
+        seen: set[str] = set()
+        for event in [base] + others:
+            sources = event.get("sources", [])
+            if not isinstance(sources, list):
+                continue
+            for s in sources:
+                if isinstance(s, dict):
+                    url = str(s.get("url", "")).strip()
+                    name = str(s.get("name", "")).strip()
+                    key = url or name
+                    if key and key not in seen:
+                        seen.add(key)
+                        all_sources.append(s)
+                elif isinstance(s, str) and s.strip() not in seen:
+                    seen.add(s.strip())
+                    all_sources.append({"name": s.strip(), "url": ""})
+        return all_sources
 
     @classmethod
     def _merge_same_company_events(cls, events: list[dict]) -> list[dict]:
@@ -820,23 +968,10 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                 if used[i]:
                     continue
                 base = group[i]
+                cluster_events: list[dict] = [base]
                 # v12: 使用 core_event_title_en 做跨语种去重
                 base_title = str(base.get("core_event_title_en", base.get("core_event_title", ""))).strip().lower()
                 base_tokens = set(cls._WORD_PATTERN.findall(base_title))
-
-                all_sources: list[dict] = []
-                seen_source_urls: set[str] = set()
-                # 收集 base 的 sources
-                for s in base.get("sources", []):
-                    if isinstance(s, dict):
-                        s_url = str(s.get("url", "")).strip()
-                        if s_url and s_url not in seen_source_urls:
-                            seen_source_urls.add(s_url)
-                            all_sources.append(s)
-                        elif not s_url:
-                            all_sources.append(s)
-                    elif isinstance(s, str):
-                        all_sources.append({"name": s, "url": ""})
 
                 all_dates = [str(base.get("date", ""))[:10]]
 
@@ -855,20 +990,20 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                     union = len(base_tokens | other_tokens)
                     similarity = overlap / union if union > 0 else 0
 
-                    if similarity >= cls._MERGE_SIMILARITY_THRESHOLD:
+                    should_merge = (
+                        similarity >= cls._MERGE_SIMILARITY_THRESHOLD
+                        or cls._is_restructuring_duplicate(base, other)
+                    )
+
+                    if should_merge:
                         used[j] = True
-                        # 合并 sources
-                        for s in other.get("sources", []):
-                            if isinstance(s, dict):
-                                s_url = str(s.get("url", "")).strip()
-                                if s_url and s_url not in seen_source_urls:
-                                    seen_source_urls.add(s_url)
-                                    all_sources.append(s)
-                                elif not s_url:
-                                    all_sources.append(s)
-                            elif isinstance(s, str):
-                                all_sources.append({"name": s, "url": ""})
+                        cluster_events.append(other)
                         all_dates.append(str(other.get("date", ""))[:10])
+                        richer = cls._choose_richer_event(base, other)
+                        if richer is other:
+                            base = other
+                            base_title = str(base.get("core_event_title_en", base.get("core_event_title", ""))).strip().lower()
+                            base_tokens = set(cls._WORD_PATTERN.findall(base_title))
                         logger.info(
                             f"[语义合并] {ent}: "
                             f"'{base_title[:50]}…' ← '{other_title[:50]}…' "
@@ -888,10 +1023,12 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                     "original_language": base.get("original_language", ""),
                     "executive_insight": base.get("executive_insight", ""),
                     "date": max(d for d in all_dates if d) if all_dates else base.get("date", ""),
-                    "sources": all_sources,
+                    "sources": cls._merge_event_sources(base, [e for e in cluster_events if e is not base]),
                     "risk_category": base.get("risk_category", ""),
                     "is_valid_risk": base.get("is_valid_risk", True),
                     "is_direct_material_impact": base.get("is_direct_material_impact", True),
+                    "materiality": base.get("materiality", ""),
+                    "materiality_basis": base.get("materiality_basis", ""),
                 }
                 merged.append(merged_event)
 
@@ -915,13 +1052,16 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         for event in all_events:
             if not isinstance(event, dict):
                 continue
+            event = cls._apply_materiality_guardrails(event)
             if event.get("is_valid_risk") is False:
                 invalid_events.append(event)
             elif event.get("is_direct_material_impact") is False:
                 event["materiality"] = "🟡 战略观察"
+                event.setdefault("materiality_basis", "传导链暂未触及上游电池材料端")
                 watch_events.append(event)
             else:
                 event["materiality"] = "🔴 直接材料冲击"
+                event.setdefault("materiality_basis", "公开信息指向材料端直接传导")
                 valid_events.append(event)
 
         # 审计日志（v12：优先使用 core_event_title_en）
@@ -1731,6 +1871,51 @@ Output only valid JSON array, no markdown."""
         else:
             return "⚠️"
 
+    @staticmethod
+    def _source_quality_label(name: str, url: str) -> str:
+        haystack = f"{name} {url}".lower()
+        if "news.google.com" in haystack:
+            return "聚合"
+        if any(x in haystack for x in ("reuters", "bloomberg", "apnews", "associated press", "wsj", "ft.com")):
+            return "新闻源"
+        if any(x in haystack for x in ("gov", "europa.eu", "sec.gov", "nhtsa", "cbp.gov", "efrag.org")):
+            return "官方"
+        return "媒体"
+
+    @classmethod
+    def _format_sources_for_dingtalk(cls, sources_raw, event_lang: str = "") -> tuple[str, int]:
+        source_links: list[str] = []
+        seen_keys: set[str] = set()
+        if isinstance(sources_raw, list):
+            for s in sources_raw:
+                if isinstance(s, dict):
+                    name = str(s.get("name", "")).strip()
+                    src_url = str(s.get("url", "")).strip()
+                    s_lang = str(s.get("original_language", "")) or event_lang
+                    domain = extract_domain_name(src_url) if src_url else ""
+                    key = (domain or name).lower()
+                    if not name or not key or key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    quality = cls._source_quality_label(name, src_url)
+                    lang_suffix = f"/{s_lang}" if s_lang else ""
+                    label = f"{name} ({quality}{lang_suffix})"
+                    if src_url and src_url.lower().startswith("http"):
+                        source_links.append(f"[{label}]({src_url})")
+                    else:
+                        source_links.append(label)
+                elif isinstance(s, str) and s.strip():
+                    key = s.strip().lower()
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        source_links.append(f"{s.strip()} (媒体)")
+
+        if len(source_links) > 2:
+            return " · ".join(source_links[:2]) + f" · 等 {len(source_links)} 家", len(source_links)
+        if source_links:
+            return " · ".join(source_links), len(source_links)
+        return "Unknown", 0
+
     @classmethod
     def _format_for_dingtalk(cls, valid_events: list[dict], mode: str, now_str: str, dmin: str, dmax: str, weekly_review_text: str = None) -> str:
         """从结构化事件数据构建钉钉优化版 Markdown 消息。"""
@@ -1759,13 +1944,13 @@ Output only valid JSON array, no markdown."""
         else:
             title = "🏛️ ESG 全球供应链动态日报 (Daily Intelligence)"
 
-        n_events = len(material_events)
-        n_companies = len(set(e.get("entity", "") for e in material_events))
-        watch_stat = f" · 📡 {len(ding_watch)} 条战略观察" if ding_watch else ""
+        n_material = len(material_events)
+        n_watch = len(ding_watch)
+        n_companies = len(set(e.get("entity", "") for e in material_events + ding_watch))
 
         lines: list[str] = [
             f"# {title}",
-            f"> 📅 {now_str} · 🔴 {n_events} 条材料冲击 · {n_companies} 家企业{watch_stat} · 📆 {dmin} ~ {dmax}",
+            f"> 📅 {now_str} · 🔴 {n_material} 条直接材料冲击 · 🟡 {n_watch} 条战略观察 · {n_companies} 家企业 · 📆 {dmin} ~ {dmax}",
             "",
         ]
 
@@ -1778,6 +1963,8 @@ Output only valid JSON array, no markdown."""
                 continue
             emoji = cls.CATEGORY_EMOJI_MAP.get(cat, "")
             lines.append(f"- {emoji} **{cat}** · {len(evs)} 条")
+        if ding_watch:
+            lines.append(f"- 📡 **战略观察** · {len(ding_watch)} 条")
         lines.append("")
         lines.append("━━━━━━━━━━━━━━━━━━━━")
         lines.append("")
@@ -1790,7 +1977,8 @@ Output only valid JSON array, no markdown."""
             emoji = cls.CATEGORY_EMOJI_MAP.get(cat, "")
             desc = cls.CATEGORY_DESCRIPTIONS.get(cat, "")
             lines.append(f"## {emoji} {cat}")
-            lines.append(f"> {desc}")
+            if mode == "weekly" and desc:
+                lines.append(f"> {desc}")
             lines.append("")
 
             for e in evs:
@@ -1806,45 +1994,19 @@ Output only valid JSON array, no markdown."""
 
                 severity = cls._get_severity_marker(cat, is_material)
 
-                # ── 信息源聚合 + 折叠 ──
-                sources_raw = e.get("sources", [])
                 event_lang = str(e.get("original_language", "")).strip()
-                source_links: list[str] = []
-                seen_labels: set[str] = set()
-                if isinstance(sources_raw, list):
-                    for s in sources_raw:
-                        if isinstance(s, dict):
-                            name = str(s.get("name", "")).strip()
-                            src_url = str(s.get("url", "")).strip()
-                            s_lang = str(s.get("original_language", "")) or event_lang
-                            if name:
-                                label = f"{name} ({s_lang})" if s_lang else name
-                                if label in seen_labels:
-                                    continue
-                                seen_labels.add(label)
-                                if src_url and src_url.lower().startswith("http"):
-                                    source_links.append(f"[{label}]({src_url})")
-                                else:
-                                    source_links.append(label)
-                        elif isinstance(s, str) and s.strip():
-                            if s.strip() not in seen_labels:
-                                seen_labels.add(s.strip())
-                                source_links.append(s.strip())
+                sources_str, source_count = cls._format_sources_for_dingtalk(
+                    e.get("sources", []), event_lang,
+                )
+                basis = str(e.get("materiality_basis", "")).strip() or "公开信息指向材料端直接传导"
 
-                if len(source_links) > 2:
-                    visible = source_links[:2]
-                    total = len(source_links)
-                    sources_str = " · ".join(visible) + f" · 等 {total} 家"
-                elif source_links:
-                    sources_str = " · ".join(source_links)
-                else:
-                    sources_str = "Unknown"
-
-                lines.append(f"{severity} **{entity} | {title_text}**")
+                lines.append(f"{severity} **{e.get('materiality', '🔴 直接材料冲击')} · {entity} | {title_text}**")
+                lines.append(f"> 判定依据：{basis}")
                 lines.append("")
                 lines.append(f"{insight}")
                 lines.append("")
-                lines.append(f"📅 {date} · 📰 {sources_str}")
+                source_stat = f"{source_count} 家去重来源" if source_count else "来源未识别"
+                lines.append(f"📅 {date} · 📰 {source_stat}：{sources_str}")
                 lines.append("")
                 lines.append("━━━━━━━━━━━━━━━━━━━━")
                 lines.append("")
@@ -1876,8 +2038,16 @@ Output only valid JSON array, no markdown."""
                 ).strip()
                 date = str(e.get("date", ""))[:10]
                 cat = str(e.get("risk_category", "")).strip()
-                lines.append(f"⚪ **{entity}** · {title_text}")
-                lines.append(f"> 📅 {date} | 🏷️ {cat}")
+                event_lang = str(e.get("original_language", "")).strip()
+                sources_str, source_count = cls._format_sources_for_dingtalk(e.get("sources", []), event_lang)
+                basis = str(e.get("materiality_basis", "")).strip() or "传导链暂未触及上游电池材料端"
+                insight = str(e.get("executive_insight", "")).strip()
+                lines.append(f"⚪ **🟡 战略观察 · {entity}** · {title_text}")
+                lines.append(f"> 判定依据：{basis}")
+                if insight:
+                    lines.append(f"> {insight}")
+                source_stat = f"{source_count} 家去重来源" if source_count else "来源未识别"
+                lines.append(f"> 📅 {date} | 🏷️ {cat} | 📰 {source_stat}：{sources_str}")
                 lines.append("")
             if len(ding_watch) > 5:
                 lines.append(f"> *...等共 {len(ding_watch)} 条，完整内容见周报文件及 Notion 数据库*")

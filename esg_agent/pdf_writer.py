@@ -10,16 +10,20 @@ from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import mm
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, PageBreak, HRFlowable,
-)
-from reportlab.lib.colors import HexColor
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, HRFlowable,
+    )
+    from reportlab.lib.colors import HexColor
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    _REPORTLAB_AVAILABLE = True
+except ModuleNotFoundError:
+    _REPORTLAB_AVAILABLE = False
 
 logger = logging.getLogger("esg_agent.pdf")
 
@@ -27,6 +31,8 @@ logger = logging.getLogger("esg_agent.pdf")
 # 注册中文字体（macOS 系统字体）
 def _register_fonts():
     """尝试注册中文字体，失败则回退到 Helvetica。"""
+    if not _REPORTLAB_AVAILABLE:
+        return "Helvetica"
     font_paths = [
         # macOS
         ("/System/Library/Fonts/PingFang.ttc", "PingFang"),
@@ -50,6 +56,8 @@ _FONT_NAME = _register_fonts()
 
 def _md_to_pdf_elements(md_text: str) -> list:
     """将 Markdown 文本转换为 reportlab Platypus 元素列表。"""
+    if not _REPORTLAB_AVAILABLE:
+        raise RuntimeError("reportlab is not installed; PDF conversion is unavailable")
     styles = getSampleStyleSheet()
 
     # 自定义样式
@@ -137,6 +145,8 @@ def convert_markdown_to_pdf(md_path: str, pdf_path: str = None) -> str:
         pdf_path = str(md_path.with_suffix(".pdf"))
 
     md_text = md_path.read_text(encoding="utf-8")
+    if not _REPORTLAB_AVAILABLE:
+        raise RuntimeError("reportlab is not installed; PDF conversion is unavailable")
     elements = _md_to_pdf_elements(md_text)
 
     doc = SimpleDocTemplate(
@@ -156,6 +166,8 @@ def convert_markdown_to_pdf(md_path: str, pdf_path: str = None) -> str:
 
 def convert_markdown_to_pdf_bytes(md_text: str) -> BytesIO:
     """将 Markdown 文本转为 PDF bytes buffer（用于 API 流式返回）。"""
+    if not _REPORTLAB_AVAILABLE:
+        raise RuntimeError("reportlab is not installed; PDF conversion is unavailable")
     elements = _md_to_pdf_elements(md_text)
     buf = BytesIO()
     doc = SimpleDocTemplate(

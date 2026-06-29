@@ -48,6 +48,7 @@ from esg_agent.config import (
 from esg_agent.fetchers import (
     ContentExtractor, NewsFetcher, resolve_news_url, strip_html,
 )
+from esg_agent.canonical import canonical_event_key
 from esg_agent.filters import EntityFilter
 from esg_agent.deduplication import JaccardMerger, LLMGlobalConvergence
 from esg_agent.reporters import MarkdownReportWriter
@@ -316,6 +317,7 @@ class ESGIntelligenceAgent:
       "executive_insight": "客观事实 + 华友钴业视角传导分析，50-80字",
       "date": "最新日期 YYYY-MM-DD",
       "sources": [{{"name": "媒体A", "url": "https://example.com/articleA"}}, {{"name": "媒体B", "url": "https://example.com/articleB"}}],
+      "source_urls": ["https://example.com/articleA", "https://example.com/articleB"],
        "risk_category": "上述五大分类之一",
       "is_valid_risk": true,
       "is_direct_material_impact": true
@@ -328,6 +330,7 @@ class ESGIntelligenceAgent:
       "executive_insight": "实体错误，非监控目标",
       "date": "2026-05-27",
       "sources": [{{"name": "Jacobin", "url": "https://jacobin.com/example"}}],
+      "source_urls": ["https://jacobin.com/example"],
       "risk_category": "机构与声誉预警",
       "is_valid_risk": false,
       "is_direct_material_impact": false
@@ -460,6 +463,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 	      "learning_insight": "CATL获两项电池安全设计专利授权，覆盖热失控防护与结构创新。华友前驱体/正极材料研发团队可借鉴其安全设计思路，联合电池客户开展材料-电芯协同安全专利布局。",
 	      "date": "2026-06-23",
 	      "sources": [{{"name": "国家知识产权局", "url": "https://cnipa.gov.cn/example"}}],
+	      "source_urls": ["https://cnipa.gov.cn/example"],
 	      "practice_category": "技术创新与工艺升级",
 	      "is_valid_practice": true,
 	      "is_replicable": true
@@ -472,6 +476,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 	      "learning_insight": "链博会展出产品，无量产时间表、第三方认证或已授权专利证据，属展会宣讲而非可验证的技术突破。",
 	      "date": "2026-06-23",
 	      "sources": [{{"name": "36氪", "url": "https://36kr.com/example"}}],
+	      "source_urls": ["https://36kr.com/example"],
 	      "practice_category": "技术创新与工艺升级",
 	      "is_valid_practice": false,
 	      "is_replicable": false
@@ -484,6 +489,7 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
 	      "learning_insight": "股权投资行为，非可复制的运营实践，即使投资对象属绿色低碳领域。",
 	      "date": "2026-06-23",
 	      "sources": [{{"name": "企查查", "url": "https://qcc.com/example"}}],
+	      "source_urls": ["https://qcc.com/example"],
 	      "practice_category": "ESG披露与治理",
 	      "is_valid_practice": false,
 	      "is_replicable": false
@@ -724,6 +730,35 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
             logger.warning("_extract_events_object: events array has no items with non-empty 'entity' field — discarding.")
             return None
         return events
+
+    @classmethod
+    def _attach_source_urls(cls, event: dict, fallback_sources: list[dict]) -> dict:
+        """Ensure every event keeps real URLs on the source objects."""
+        if not isinstance(event, dict):
+            return event
+
+        source_urls = event.get("source_urls")
+        sources = event.get("sources")
+        if isinstance(source_urls, list) and isinstance(sources, list):
+            for idx, source in enumerate(sources):
+                if not isinstance(source, dict):
+                    continue
+                if source.get("url"):
+                    continue
+                if idx < len(source_urls):
+                    candidate = str(source_urls[idx]).strip()
+                    if candidate.startswith("http"):
+                        source["url"] = candidate
+
+        if isinstance(sources, list):
+            for source in sources:
+                if isinstance(source, dict) and source.get("url"):
+                    continue
+                if fallback_sources:
+                    fallback = fallback_sources[0]
+                    if fallback.get("url") and isinstance(source, dict):
+                        source["url"] = fallback["url"]
+        return event
 
     @staticmethod
     def _repair_llm_json(text: str) -> Optional[str]:
@@ -993,6 +1028,7 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                     should_merge = (
                         similarity >= cls._MERGE_SIMILARITY_THRESHOLD
                         or cls._is_restructuring_duplicate(base, other)
+                        or canonical_event_key(base) == canonical_event_key(other)
                     )
 
                     if should_merge:
@@ -1104,7 +1140,7 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         # 全局聚合完成后，遍历所有幸存事件的 sources 数组，
         # 将 Google News 加密链接（news.google.com/rss/articles）还原为真实源站直链。
         unwrap_count = 0
-        for event in valid_events:
+        for event in valid_events + watch_events:
             sources = event.get("sources")
             if not isinstance(sources, list):
                 continue
@@ -1485,6 +1521,22 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         if len(valid_events) < pre_merge:
             logger.info(f"Practice 语义合并: {pre_merge} -> {len(valid_events)}")
 
+        unwrap_count = 0
+        for event in valid_events:
+            sources = event.get("sources")
+            if not isinstance(sources, list):
+                continue
+            for s in sources:
+                if isinstance(s, dict):
+                    src_url = str(s.get("url", "")).strip()
+                    if src_url and "news.google.com" in src_url:
+                        resolved = cls._unwrap_google_news_url(src_url)
+                        if resolved != src_url:
+                            s["url"] = resolved
+                            unwrap_count += 1
+        if unwrap_count:
+            logger.info(f"Practice Google News URL 解包: {unwrap_count} 个链接已还原")
+
         # ── 2.5. 静默阻断：本周无实践事件 ──
         if not valid_events:
             logger.info(f"Practice 模式: 本周分析 {len(all_events)} 篇，无可复制的良好实践，执行静默阻断。")
@@ -1673,31 +1725,15 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         """将 Google News RSS 加密链接还原为底层真实媒体直链。
 
         仅处理包含 'news.google.com/rss/articles' 的 URL；
-        使用 requests.head 跟随重定向链，返回最终跳转地址。
+        使用 fetchers.resolve_news_url 的多级策略，返回最终跳转地址。
         解析失败或非 Google News 链接时原样返回。
         """
         if not url or not cls._GOOGLE_RSS_ARTICLE_RE.search(url):
             return url
-        try:
-            resp = requests.head(
-                url,
-                headers=FETCH_HEADERS,
-                allow_redirects=True,
-                timeout=5,
-            )
-            final_url = resp.url
-            if (
-                final_url != url
-                and "google.com" not in final_url
-                and final_url.lower().startswith("http")
-            ):
-                logger.debug(f"Google News unwrapped: {url[:60]}... -> {final_url[:80]}...")
-                return final_url
-            else:
-                logger.debug(f"Google News unwrap: no redirect for {url[:60]}...")
-        except Exception as exc:
-            logger.debug(f"Google News unwrap failed [{url[:60]}...]: {exc}")
-        return url
+        resolved = resolve_news_url(url)
+        if resolved != url:
+            logger.debug(f"Google News unwrapped: {url[:60]}... -> {resolved[:80]}...")
+        return resolved
 
     @classmethod
     def _unwrap_event_sources(cls, event: dict) -> dict:
@@ -1818,6 +1854,17 @@ Output only valid JSON array, no markdown."""
                     )
                     continue
 
+                batch_source_meta = [
+                    {
+                        "name": str(item.get("source", "")).strip(),
+                        "url": str(item.get("url", "")).strip(),
+                    }
+                    for item in batch
+                    if str(item.get("url", "")).strip()
+                ]
+                for event in parsed:
+                    self._attach_source_urls(event, batch_source_meta)
+
                 all_events.extend(parsed)
                 valid_in_batch = sum(1 for e in parsed if e.get("is_valid_risk") is not False)
                 logger.info(f"  Batch {batch_idx + 1}: {len(parsed)} events ({valid_in_batch} valid) extracted.")
@@ -1917,8 +1964,46 @@ Output only valid JSON array, no markdown."""
         return "Unknown", 0
 
     @classmethod
+    def _dedupe_events_for_push(cls, events: list[dict]) -> list[dict]:
+        """Final deterministic deduplication before executive push rendering."""
+        groups: dict[str, list[dict]] = {}
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            groups.setdefault(canonical_event_key(event), []).append(event)
+
+        deduped: list[dict] = []
+        for group in groups.values():
+            if len(group) == 1:
+                deduped.append(group[0])
+                continue
+
+            base = group[0]
+            for other in group[1:]:
+                richer = cls._choose_richer_event(base, other)
+                if richer is other:
+                    base = other
+
+            merged = dict(base)
+            merged["sources"] = cls._merge_event_sources(base, [e for e in group if e is not base])
+            if any(e.get("materiality") != "🟡 战略观察" for e in group):
+                merged["materiality"] = "🔴 直接材料冲击"
+                merged["is_direct_material_impact"] = True
+                merged.setdefault("materiality_basis", "公开信息指向材料端直接传导")
+            else:
+                merged["materiality"] = "🟡 战略观察"
+                merged["is_direct_material_impact"] = False
+                merged.setdefault("materiality_basis", "传导链暂未触及上游电池材料端")
+            deduped.append(merged)
+
+        if len(deduped) < len(events):
+            logger.info(f"钉钉推送前去重: {len(events)} -> {len(deduped)} 条")
+        return deduped
+
+    @classmethod
     def _format_for_dingtalk(cls, valid_events: list[dict], mode: str, now_str: str, dmin: str, dmax: str, weekly_review_text: str = None) -> str:
         """从结构化事件数据构建钉钉优化版 Markdown 消息。"""
+        valid_events = cls._dedupe_events_for_push(valid_events)
         # ── 按 materiality 分层 ──
         material_events = [e for e in valid_events if e.get("materiality") != "🟡 战略观察"]
         ding_watch = [e for e in valid_events if e.get("materiality") == "🟡 战略观察"]
@@ -2237,8 +2322,6 @@ Output only valid JSON array, no markdown."""
                     event["mode"] = event.get("mode", mode)
                     event["push_date"] = event.get("push_date", today_str)
                     # 字段别名
-                    if "english_title" not in event:
-                        event["english_title"] = event.get("core_event_title_en", "")
                     if "insight" not in event:
                         event["insight"] = event.get("executive_insight", "")
 
@@ -2290,8 +2373,6 @@ Output only valid JSON array, no markdown."""
                 try:
                     event["mode"] = event.get("mode", mode)
                     event["push_date"] = event.get("push_date", today_str)
-                    if "english_title" not in event:
-                        event["english_title"] = event.get("core_event_title_en", "")
                     if "insight" not in event:
                         event["insight"] = event.get("learning_insight", "")
 
@@ -2593,6 +2674,7 @@ Output only valid JSON array, no markdown."""
                 "date": article.date,
                 "source": article.source,
                 "url": article.url,
+                "source_url": article.url,
                 "raw_summary": article.raw_summary,
                 "lang": article.lang,
                 "track_label": article.track_label,

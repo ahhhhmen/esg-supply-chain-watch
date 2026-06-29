@@ -116,6 +116,19 @@ class TestBuildNotionProperties:
         # 关键词"罢工"应映射为劳工权益
         assert props["Risk Category"]["select"]["name"] == "劳工权益"
 
+    def test_sources_are_written_as_rich_text_links(self, sample_event):
+        sample_event["_external_id"] = "abc123def456"
+        sample_event["sources"] = [
+            {"name": "Reuters", "url": "https://reuters.com/article"},
+            {"name": "Bloomberg", "url": "https://bloomberg.com/story"},
+        ]
+        props = build_notion_properties(sample_event)
+        sources = props["Sources"]["rich_text"]
+        assert sources[0]["text"]["content"] == "Reuters"
+        assert sources[0]["text"]["link"]["url"] == "https://reuters.com/article"
+        assert sources[2]["text"]["content"] == "Bloomberg"
+        assert sources[2]["text"]["link"]["url"] == "https://bloomberg.com/story"
+
     def test_materiality_mapping(self, sample_event):
         """验证 Materiality 字段正确映射。"""
         # 默认值
@@ -126,6 +139,43 @@ class TestBuildNotionProperties:
         sample_event["materiality"] = "🟡 战略观察"
         props2 = build_notion_properties(sample_event)
         assert props2["Materiality"]["select"]["name"] == "🟡 战略观察"
+
+    def test_english_title_ignores_translated_dedup_summary_for_chinese_source(self):
+        event = {
+            "entity": "大众汽车",
+            "date": "2026-06-18",
+            "display_title_zh": "大众汽车宣布在德国裁员1.9万人",
+            "core_event_title_en": "Volkswagen announces layoffs in Germany",
+            "original_language": "中文",
+            "insight": "大众汽车在德国裁员以削减成本应对电动化转型。",
+            "sources": "",
+            "category": "合规与运营危机",
+            "mode": "daily",
+            "push_date": "2026-06-18",
+            "_external_id": "test12345678",
+        }
+
+        props = build_notion_properties(event)
+        assert props["English Title"]["rich_text"][0]["text"]["content"] == ""
+
+    def test_english_title_uses_original_non_chinese_title(self):
+        event = {
+            "entity": "大众汽车",
+            "date": "2026-06-18",
+            "display_title_zh": "大众汽车宣布在德国裁员1.9万人",
+            "core_event_title_en": "Volkswagen announces layoffs in Germany",
+            "original_language": "英语",
+            "original_title": "Volkswagen announces 19,000 layoffs in Germany",
+            "insight": "大众汽车在德国裁员以削减成本应对电动化转型。",
+            "sources": "",
+            "category": "合规与运营危机",
+            "mode": "daily",
+            "push_date": "2026-06-18",
+            "_external_id": "test12345678",
+        }
+
+        props = build_notion_properties(event)
+        assert props["English Title"]["rich_text"][0]["text"]["content"] == "Volkswagen announces 19,000 layoffs in Germany"
 
 
 

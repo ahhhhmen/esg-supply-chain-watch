@@ -82,6 +82,72 @@ class TestDingTalkDeduplication:
 
         assert len(merged) == 2
 
+    def test_tesla_sweden_strike_scale_back_variants_merge(self):
+        events = [
+            _event(
+                entity="特斯拉",
+                core_event_title_en="Tesla Sweden strike action scaled back",
+                display_title_zh="特斯拉在瑞典的长期罢工被工会缩减规模",
+                date="2026-05-29",
+                sources=[{"name": "Source A", "url": "https://example.com/a"}],
+            ),
+            _event(
+                entity="特斯拉",
+                core_event_title_en="IF Metall partially scales back strike against Tesla in Sweden",
+                display_title_zh="IF Metall部分缩减在瑞典针对特斯拉的罢工行动",
+                date="2026-05-29",
+                sources=[{"name": "Source B", "url": "https://example.com/b"}],
+            ),
+            _event(
+                entity="特斯拉",
+                core_event_title_en="Tesla Sweden strike scaled back as mechanics return",
+                display_title_zh="特斯拉瑞典罢工规模缩减，IF Metall要求机械师复工",
+                date="2026-05-29",
+                sources=[{"name": "Source C", "url": "https://example.com/c"}],
+            ),
+        ]
+
+        merged = ESGIntelligenceAgent._merge_same_company_events(events)
+
+        assert len(merged) == 1
+        assert len(merged[0]["sources"]) == 3
+
+    def test_dingtalk_selection_dedupes_across_materiality_tiers(self):
+        events = [
+            _event(
+                entity="宝马",
+                core_event_title_en="BMW engine fire leads to Korea sales ban",
+                display_title_zh="宝马发动机起火导致韩国禁令",
+                date="2026-05-23",
+                materiality="🔴 直接材料冲击",
+                is_direct_material_impact=True,
+                materiality_basis="公开信息指向材料端直接传导",
+                sources=[{"name": "A", "url": "https://example.com/a"}],
+            ),
+            _event(
+                entity="宝马",
+                core_event_title_en="BMW engine fire causes South Korea sales ban",
+                display_title_zh="宝马发动机起火导致韩国禁售",
+                date="2026-05-23",
+                materiality="🟡 战略观察",
+                is_direct_material_impact=False,
+                materiality_basis="传导链暂未触及上游电池材料端",
+                sources=[{"name": "B", "url": "https://second.example/b"}],
+            ),
+        ]
+
+        content = ESGIntelligenceAgent._format_for_dingtalk(
+            events,
+            "daily",
+            "2026-05-23 09:00",
+            "2026-05-23",
+            "2026-05-23",
+        )
+
+        assert "🔴 1 条直接材料冲击 · 🟡 0 条战略观察" in content
+        assert content.count("宝马发动机起火导致韩国") == 1
+        assert "2 家去重来源" in content
+
 
 class TestMaterialityGuardrails:
     def test_oem_restructuring_without_material_trigger_becomes_watch(self, tmp_path):

@@ -15,6 +15,7 @@ import feedparser
 import requests
 import yaml
 from bs4 import BeautifulSoup
+from esg_agent.fetchers import resolve_news_url
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,7 @@ class SourcingEngine:
                         continue
 
                     title = getattr(feed_entry, "title", "")
-                    link = getattr(feed_entry, "link", "")
+                    link = resolve_news_url(getattr(feed_entry, "link", ""))
                     summary = getattr(feed_entry, "summary", "")
                     content_body = f"{title}\n{summary}".strip()
 
@@ -237,7 +238,7 @@ class SourcingEngine:
                 continue
 
             title = getattr(entry, "title", "")
-            link = getattr(entry, "link", "")
+            link = resolve_news_url(getattr(entry, "link", ""))
             summary = getattr(entry, "summary", "")
             content_body = f"{title}\n{summary}".strip()
 

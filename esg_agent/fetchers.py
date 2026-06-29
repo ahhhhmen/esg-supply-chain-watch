@@ -7,7 +7,7 @@ import html as _html
 import logging
 import re
 from typing import Optional
-from urllib.parse import unquote,parse_qs,urlparse
+from urllib.parse import unquote, parse_qs, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -17,16 +17,87 @@ from .config import FETCH_HEADERS
 logger = logging.getLogger("esg_agent")
 
 
+_HTTP_URL_RE = re.compile(r"https?://[^\s\"'<>\\]+", re.I)
+_GOOGLE_HOST_RE = re.compile(r"(^|\.)google\.", re.I)
+
+
+def _is_google_url(url: str) -> bool:
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:
+        return False
+    return bool(_GOOGLE_HOST_RE.search(host))
+
+
+def _clean_candidate_url(raw: str) -> str:
+    cleaned = _html.unescape(unquote(str(raw or "").strip()))
+    cleaned = cleaned.rstrip(").,;]}\"'")
+    return cleaned
+
+
+def _extract_original_from_html(html_text: str) -> str:
+    """Best-effort extraction of the publisher URL from a Google News page."""
+    if not html_text:
+        return ""
+
+    soup = BeautifulSoup(html_text, "html.parser")
+    for selector in (
+        ("link", {"rel": "canonical"}),
+        ("meta", {"property": "og:url"}),
+        ("meta", {"name": "twitter:url"}),
+    ):
+        tag = soup.find(*selector)
+        value = ""
+        if tag:
+            value = tag.get("href") or tag.get("content") or ""
+        value = _clean_candidate_url(value)
+        if value and value.startswith("http") and not _is_google_url(value):
+            return value
+
+    for a in soup.find_all("a", href=True):
+        href = _clean_candidate_url(a.get("href", ""))
+        if href.startswith("./articles/"):
+            continue
+        if href.startswith("http") and not _is_google_url(href):
+            return href
+
+    for candidate in _HTTP_URL_RE.findall(html_text):
+        candidate = _clean_candidate_url(candidate)
+        if candidate.startswith("http") and not _is_google_url(candidate):
+            return candidate
+    return ""
+
+
 def resolve_news_url(url: str, timeout: int = 5) -> str:
     if not url or "news.google.com" not in url:
         return url
+
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query)
+    for key in ("url", "u", "q"):
+        for val in qs.get(key, []):
+            candidate = _clean_candidate_url(val)
+            if candidate.startswith("http") and not _is_google_url(candidate):
+                return candidate
+
     try:
         resp = requests.head(url, headers=FETCH_HEADERS, allow_redirects=True, timeout=timeout)
         final = resp.url
-        if final != url and "google.com" not in final and len(final) > 15 and final.lower().startswith("http"):
+        if final != url and not _is_google_url(final) and len(final) > 15 and final.lower().startswith("http"):
             return final
     except Exception as exc:
-        logger.debug(f"URL resolve failed: {exc}")
+        logger.debug(f"URL HEAD resolve failed: {exc}")
+
+    try:
+        resp = requests.get(url, headers=FETCH_HEADERS, allow_redirects=True, timeout=timeout)
+        final = resp.url
+        if final != url and not _is_google_url(final) and len(final) > 15 and final.lower().startswith("http"):
+            return final
+        candidate = _extract_original_from_html(resp.text)
+        if candidate:
+            return candidate
+    except Exception as exc:
+        logger.debug(f"URL GET resolve failed: {exc}")
     return url
 
 

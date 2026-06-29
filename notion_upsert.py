@@ -18,6 +18,7 @@ notion_upsert.py — 幂等 Notion 写入助手
 
 import hashlib
 import logging
+import re
 from typing import Any, Callable, Optional
 
 from notion_mapping import (
@@ -26,8 +27,45 @@ from notion_mapping import (
     map_practice_category,
     map_entity,
 )
+from esg_agent.canonical import canonical_external_id, canonical_event_key, fallback_english_title
+from esg_agent.fetchers import resolve_news_url
 
 logger = logging.getLogger("notion_upsert")
+
+
+def _clean_source_name(name: str) -> str:
+    text = str(name or "").strip()
+    if not text:
+        return ""
+    # Drop any pre-attached quality/language suffixes like " (英语)" or " (媒体/英语)"
+    text = re.sub(r"\s*\([^)]*(?:英语|中文|媒体|新闻源|官方|聚合)[^)]*\)\s*$", "", text)
+    return text.strip()
+
+
+def _build_sources_rich_text(sources_text: Any) -> list[dict]:
+    rich_text: list[dict] = []
+    if isinstance(sources_text, list):
+        items = []
+        for s in sources_text[:8]:
+            if isinstance(s, dict):
+                name = _clean_source_name(s.get("name", ""))
+                url = resolve_news_url(str(s.get("url", "")))
+                if name:
+                    items.append((name, url if url.startswith("http") else ""))
+            elif isinstance(s, str):
+                name = _clean_source_name(s)
+                if name:
+                    items.append((name, ""))
+        for idx, (name, url) in enumerate(items):
+            if idx:
+                rich_text.append({"text": {"content": ", "}})
+            rich_text.append({"text": {"content": name, "link": {"url": url}}} if url else {"text": {"content": name}})
+        return rich_text
+
+    text = str(sources_text or "").strip()
+    if text:
+        rich_text.append({"text": {"content": text[:2000]}})
+    return rich_text
 
 
 def generate_external_id(entity: str, date: str, title: str) -> str:
@@ -117,25 +155,10 @@ def build_notion_properties(event: dict) -> dict:
 
     # 标题：兼容两种字段名
     title_text = event.get("display_title_zh", "")[:2000]
-    english_title = event.get("english_title", event.get("core_event_title_en", ""))[:2000]
+    english_title = fallback_english_title(event)[:2000]
     insight_text = event.get("insight", event.get("executive_insight", ""))[:2000]
     sources_text = event.get("sources", "")
-
-    # sources 可能已经是格式化字符串，也可能是列表
-    if isinstance(sources_text, list):
-        src_parts = []
-        for s in sources_text[:5]:
-            if isinstance(s, dict):
-                name = s.get("name", "")
-                url = s.get("url", "")
-                if url:
-                    src_parts.append(f"[{name}]({url})")
-                else:
-                    src_parts.append(name)
-            else:
-                src_parts.append(str(s))
-        sources_text = ", ".join(src_parts)
-    sources_text = sources_text[:2000] if isinstance(sources_text, str) else ""
+    sources_rich_text = _build_sources_rich_text(sources_text)
 
     return {
         "标题": {
@@ -156,9 +179,7 @@ def build_notion_properties(event: dict) -> dict:
         "Executive Insight": {
             "rich_text": [{"text": {"content": insight_text}}]
         },
-        "Sources": {
-            "rich_text": [{"text": {"content": sources_text}}]
-        },
+        "Sources": {"rich_text": sources_rich_text},
         "Materiality": {
             "select": {"name": event.get("materiality", "🔴 直接材料冲击")}
         },
@@ -200,11 +221,15 @@ def upsert_notion_page(
     title = event.get("display_title_zh", "")
     title_short = title[:50]
 
-    external_id = generate_external_id(entity, date, title)
+    external_id = canonical_external_id(event)
+    event["_canonical_event_key"] = canonical_event_key(event)
     event["_external_id"] = external_id
 
     if dry_run:
-        logger.info(f"  [DRY-RUN] External ID={external_id} | {entity} | {title_short}...")
+        logger.info(
+            f"  [DRY-RUN] External ID={external_id} | "
+            f"key={event['_canonical_event_key']} | {entity} | {title_short}..."
+        )
         return ("skipped", None)
 
     # 查询是否已存在
@@ -255,24 +280,10 @@ def build_practice_properties(event: dict) -> dict:
     )
 
     title_text = event.get("display_title_zh", "")[:2000]
-    english_title = event.get("english_title", event.get("core_event_title_en", ""))[:2000]
+    english_title = fallback_english_title(event)[:2000]
     learning_text = event.get("learning_insight", event.get("insight", ""))[:2000]
     sources_text = event.get("sources", "")
-
-    if isinstance(sources_text, list):
-        src_parts = []
-        for s in sources_text[:5]:
-            if isinstance(s, dict):
-                name = s.get("name", "")
-                url = s.get("url", "")
-                if url:
-                    src_parts.append(f"[{name}]({url})")
-                else:
-                    src_parts.append(name)
-            else:
-                src_parts.append(str(s))
-        sources_text = ", ".join(src_parts)
-    sources_text = sources_text[:2000] if isinstance(sources_text, str) else ""
+    sources_rich_text = _build_sources_rich_text(sources_text)
 
     is_replicable = bool(event.get("is_replicable", False))
 
@@ -298,9 +309,7 @@ def build_practice_properties(event: dict) -> dict:
         "Replicable": {
             "checkbox": is_replicable
         },
-        "Sources": {
-            "rich_text": [{"text": {"content": sources_text}}]
-        },
+        "Sources": {"rich_text": sources_rich_text},
         "Mode": {
             "select": {"name": event.get("mode", "practice")}
         },
@@ -340,4 +349,3 @@ def upsert_practice_page(
         dry_run=dry_run,
         properties_builder=build_practice_properties,
     )
-

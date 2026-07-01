@@ -297,3 +297,37 @@ class TestLlmGlobalConvergenceInvocation:
         assert len(valid_events) == 2
 
 
+class TestUrlPrefixMapping:
+    def test_google_news_url_prefix_restoration(self):
+        truncated_url = "https://news.google.com/rss/articles/CBMilgFBVV95cUxOTHpMdGRuQUlyUEctYml3aE5ST0wxMUxlMkIwSmlvTnhSNkRPb2dzN"
+        full_url = "https://news.google.com/rss/articles/CBMilgFBVV95cUxOTHpMdGRuQUlyUEctYml3aE5ST0wxMUxlMkIwSmlvTnhSNkRPb2dzNHFpNllFMk5ZbVlpTi0yUU9RZFhEZWs5dTNTY3BLaTBHSG56S3NfbUZZdVRiNXFFQW56NjVjMXJNSWVHSF9UWHkwVm1iUzh4ck1hTEtubTJKbUZ2cWVWZjVxSFlVZXNaTkl4TF9iOFE?oc=5"
+        
+        fallback_sources = [
+            {"name": "BHRRC", "url": full_url}
+        ]
+        
+        # Test 1: Event with sources having truncated URL
+        event = {
+            "entity": "华友钴业",
+            "sources": [
+                {"name": "BHRRC", "url": truncated_url}
+            ]
+        }
+        
+        resolved = ESGIntelligenceAgent._attach_source_urls(event, fallback_sources)
+        assert resolved["sources"][0]["url"] == full_url
+
+        # Test 2: Event with source_urls having truncated URL and empty sources urls
+        event2 = {
+            "entity": "华友钴业",
+            "source_urls": [truncated_url],
+            "sources": [
+                {"name": "BHRRC", "url": ""}
+            ]
+        }
+        resolved2 = ESGIntelligenceAgent._attach_source_urls(event2, fallback_sources)
+        assert resolved2["sources"][0]["url"] == full_url
+        assert resolved2["source_urls"][0] == full_url
+
+
+

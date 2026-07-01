@@ -737,18 +737,46 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         if not isinstance(event, dict):
             return event
 
+        def resolve_truncated_google_news_url(url_val: str) -> str:
+            if not url_val or "news.google.com" not in url_val:
+                return url_val
+            import re
+            match = re.search(r'articles/([^?]+)', url_val)
+            if not match:
+                return url_val
+            prefix = match.group(1).strip()
+            if len(prefix) < 30:
+                return url_val
+            for f in fallback_sources:
+                f_url = f.get("url", "")
+                if "news.google.com" in f_url:
+                    f_match = re.search(r'articles/([^?]+)', f_url)
+                    if f_match:
+                        f_prefix = f_match.group(1).strip()
+                        if f_prefix.startswith(prefix) or prefix.startswith(f_prefix):
+                            return f_url
+            return url_val
+
         source_urls = event.get("source_urls")
         sources = event.get("sources")
-        if isinstance(source_urls, list) and isinstance(sources, list):
+
+        if isinstance(source_urls, list):
+            for idx, url_val in enumerate(source_urls):
+                if isinstance(url_val, str) and url_val.startswith("http"):
+                    source_urls[idx] = resolve_truncated_google_news_url(url_val)
+
+        if isinstance(sources, list):
             for idx, source in enumerate(sources):
                 if not isinstance(source, dict):
                     continue
-                if source.get("url"):
-                    continue
-                if idx < len(source_urls):
-                    candidate = str(source_urls[idx]).strip()
-                    if candidate.startswith("http"):
-                        source["url"] = candidate
+                url_val = source.get("url")
+                if isinstance(url_val, str) and url_val.startswith("http"):
+                    source["url"] = resolve_truncated_google_news_url(url_val)
+                else:
+                    if isinstance(source_urls, list) and idx < len(source_urls):
+                        candidate = str(source_urls[idx]).strip()
+                        if candidate.startswith("http"):
+                            source["url"] = candidate
 
         if isinstance(sources, list):
             for source in sources:
@@ -2105,11 +2133,15 @@ Output only valid JSON array, no markdown."""
                                 break
                 title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
 
-                lines.append(f"{severity} **{e.get('materiality', '🔴 直接材料冲击')} · {entity}** | {title_link}")
+                lines.append(f"### {severity} {entity} | {title_link}")
+                lines.append(f"> 🚨 **影响分级**：{e.get('materiality', '🔴 直接材料冲击')}")
+                lines.append("> ")
                 lines.append(f"> 💡 **判定依据**：{basis}")
                 if insight:
+                    lines.append("> ")
                     lines.append(f"> 🧠 **高管洞察**：{insight}")
                 source_stat = f"{source_count} 家去重来源" if source_count else "来源未识别"
+                lines.append("> ")
                 lines.append(f"> 🏷️ {cat} | 📅 {date} | 📰 {source_stat}：{sources_str}")
                 lines.append("")
                 lines.append("━━━━━━━━━━━━━━━━━━━━")
@@ -2158,11 +2190,15 @@ Output only valid JSON array, no markdown."""
                                 break
                 title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
 
-                lines.append(f"⚪ **🟡 战略观察 · {entity}** | {title_link}")
+                lines.append(f"### ⚪ {entity} | {title_link}")
+                lines.append(f"> 🚨 **影响分级**：🟡 战略观察")
+                lines.append("> ")
                 lines.append(f"> 💡 **判定依据**：{basis}")
                 if insight:
+                    lines.append("> ")
                     lines.append(f"> 🧠 **高管洞察**：{insight}")
                 source_stat = f"{source_count} 家去重来源" if source_count else "来源未识别"
+                lines.append("> ")
                 lines.append(f"> 🏷️ {cat} | 📅 {date} | 📰 {source_stat}：{sources_str}")
                 lines.append("")
             if len(ding_watch) > 5:
@@ -2230,11 +2266,22 @@ Output only valid JSON array, no markdown."""
                 date = str(e.get("date", ""))[:10]
                 is_rep = "✅" if e.get("is_replicable") else "📋"
 
-                lines.append(f"**{entity}** | *{title_text}*")
-                lines.append(f"> 📅 {date}")
+                clean_link = ""
+                sources_list = e.get("sources", [])
+                if isinstance(sources_list, list):
+                    for s in sources_list:
+                        if isinstance(s, dict):
+                            url_val = str(s.get("url", "")).strip()
+                            if url_val.lower().startswith("http"):
+                                clean_link = url_val
+                                break
+                title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
+
+                lines.append(f"### {is_rep} {entity} | {title_link}")
+                lines.append(f"> 📅 **实践时间**：{date}")
                 if learning and learning != "（待进一步分析）":
+                    lines.append("> ")
                     lines.append(f"> 💡 **可借鉴点**：{learning}")
-                lines.append(f"> {is_rep}")
                 lines.append("")
 
             remaining = len(evs) - 5

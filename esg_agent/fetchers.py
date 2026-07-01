@@ -18,7 +18,7 @@ logger = logging.getLogger("esg_agent")
 
 
 _HTTP_URL_RE = re.compile(r"https?://[^\s\"'<>\\]+", re.I)
-_GOOGLE_HOST_RE = re.compile(r"(^|\.)google\.", re.I)
+_GOOGLE_HOST_RE = re.compile(r"(^|\.)(google|gstatic|googleusercontent|youtube|ytimg)\.", re.I)
 
 
 def _is_google_url(url: str) -> bool:

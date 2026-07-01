@@ -1075,7 +1075,13 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         return merged
 
     @classmethod
-    def _generate_v10_report_and_filter(cls, all_events: list[dict], mode: str, report_path: str = "esg_global_report.md") -> list[dict]:
+    def _generate_v10_report_and_filter(
+        cls,
+        all_events: list[dict],
+        mode: str,
+        report_path: str = "esg_global_report.md",
+        agent: Optional["ESGIntelligenceAgent"] = None,
+    ) -> tuple[list[dict], list[dict]]:
         """Python 确定性渲染流水线：过滤 → 语义合并 → 分组 → 生成 Markdown 报告。
 
         所有降噪逻辑由 Python if-else 物理执行，不依赖 LLM 判断。
@@ -1129,12 +1135,15 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         # 解决跨批次 Semantic Drift 导致的假性重复 — 当前 valid_events 通常已 ≤10 条
         if len(valid_events) > 1:
             pre_converge = len(valid_events)
-            valid_events = cls._llm_global_convergence(valid_events)
-            if len(valid_events) < pre_converge:
-                logger.info(
-                    f"LLM 全局聚合: {pre_converge} -> {len(valid_events)} events "
-                    f"(合并 {pre_converge - len(valid_events)} 条跨批次重复)"
-                )
+            if agent is not None:
+                valid_events = agent._llm_global_convergence(valid_events)
+                if len(valid_events) < pre_converge:
+                    logger.info(
+                        f"LLM 全局聚合: {pre_converge} -> {len(valid_events)} events "
+                        f"(合并 {pre_converge - len(valid_events)} 条跨批次重复)"
+                    )
+            else:
+                logger.warning("[_generate_v10_report_and_filter] 提供了多个事件但未传入 agent 实例，跳过 LLM 全局聚合层。")
 
         # ── 1.65. Google News URL 延迟解包（Lazy Unwrapping） ──
         # 全局聚合完成后，遍历所有幸存事件的 sources 数组，
@@ -2714,7 +2723,9 @@ Output only valid JSON array, no markdown."""
                 all_v10_events, mode, report_path,
             )
         else:
-            intelligence_json, valid_events = self._generate_v10_report_and_filter(all_v10_events, mode, report_path)
+            intelligence_json, valid_events = self._generate_v10_report_and_filter(
+                all_v10_events, mode, report_path, agent=self
+            )
         self._last_valid_events = valid_events
         logger.info(f"Phase 5 done. Python pipeline: {len(intelligence_json)} valid items -> {report_path}")
 

@@ -198,7 +198,7 @@ class TestDingTalkFormatting:
 
         assert "🔴 0 条直接材料冲击 · 🟡 1 条战略观察 · 1 家企业" in content
         assert "材料冲击 · 1 家企业" not in content
-        assert "判定依据：未确认电动车、电池工厂或材料订单直接受影响" in content
+        assert "**判定依据**：未确认电动车、电池工厂或材料订单直接受影响" in content
 
     def test_banned_advisory_phrases_do_not_render_after_guardrail(self, tmp_path):
         _, valid_events = ESGIntelligenceAgent._generate_v10_report_and_filter(
@@ -241,3 +241,59 @@ class TestDingTalkFormatting:
 
         assert "3 家去重来源" in content
         assert "等 3 家" in content
+
+
+class TestLlmGlobalConvergenceInvocation:
+    def test_llm_global_convergence_invoked_when_agent_provided(self, tmp_path):
+        from unittest.mock import MagicMock
+        mock_agent = MagicMock()
+        mock_agent._llm_global_convergence.return_value = [{"event": "mocked"}]
+        
+        # Create two material events so that len(valid_events) > 1
+        event1 = _event(
+            entity="大众汽车",
+            core_event_title_en="Volkswagen battery plant shutdown halts EV production 1",
+            display_title_zh="大众汽车电池工厂停产导致电动车生产暂停 1",
+            executive_insight="大众汽车电池工厂停产导致电动车生产暂停，已触及电池材料需求传导 1",
+        )
+        event2 = _event(
+            entity="特斯拉",
+            core_event_title_en="Tesla battery plant shutdown halts EV production 2",
+            display_title_zh="特斯拉电池工厂停产导致电动车生产暂停 2",
+            executive_insight="特斯拉电池工厂停产导致电动车生产暂停，已触及电池材料需求传导 2",
+        )
+        
+        report = tmp_path / "daily.md"
+        _, valid_events = ESGIntelligenceAgent._generate_v10_report_and_filter(
+            [event1, event2], "daily", str(report), agent=mock_agent
+        )
+        
+        # Verify that mock_agent._llm_global_convergence was called
+        mock_agent._llm_global_convergence.assert_called_once()
+        # Verify it returned the mocked value
+        assert len(valid_events) == 1
+        assert valid_events[0] == {"event": "mocked"}
+
+    def test_llm_global_convergence_skipped_when_agent_none(self, tmp_path):
+        event1 = _event(
+            entity="大众汽车",
+            core_event_title_en="Volkswagen battery plant shutdown halts EV production 1",
+            display_title_zh="大众汽车电池工厂停产导致电动车生产暂停 1",
+            executive_insight="大众汽车电池工厂停产导致电动车生产暂停，已触及电池材料需求传导 1",
+        )
+        event2 = _event(
+            entity="特斯拉",
+            core_event_title_en="Tesla battery plant shutdown halts EV production 2",
+            display_title_zh="特斯拉电池工厂停产导致电动车生产暂停 2",
+            executive_insight="特斯拉电池工厂停产导致电动车生产暂停，已触及电池材料需求传导 2",
+        )
+        
+        report = tmp_path / "daily.md"
+        _, valid_events = ESGIntelligenceAgent._generate_v10_report_and_filter(
+            [event1, event2], "daily", str(report), agent=None
+        )
+        
+        # It should run fine without crashing and retain both events
+        assert len(valid_events) == 2
+
+

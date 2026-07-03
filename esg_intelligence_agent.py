@@ -610,24 +610,16 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
             return []
 
     def _weekly_threat_landscape_review(
-        self, events: list[dict], report_path: str, token_summary: str
-    ) -> None:
-        """Phase 6 (weekly only): LLM 分析本周监控盲区，追加到周报末尾。
+        self, events: list[dict]
+    ) -> Optional[str]:
+        """Phase 6 (weekly only): LLM 分析本周监控盲区。
 
-        将本周所有捕获事件发送给 DeepSeek，分析：
-        1. 哪些实体/关键词/区域在当前监控矩阵中缺失
-        2. 哪些新兴威胁模式未被覆盖
-        3. 对 esg_sources.yaml 和 config.yaml 的具体补充建议
-
-        输出追加到周报文件末尾作为「🔍 监控矩阵盲区分析」章节。
+        将本周所有捕获事件发送给 DeepSeek，分析并返回分析结果。
         """
 
         if not events:
-            placeholder = "\n\n---\n\n## 🔍 监控矩阵盲区分析\n\n本周未捕获风险事件，无法进行态势审查。\n"
-            with open(report_path, "a", encoding="utf-8") as f:
-                f.write(placeholder)
-            logger.info("[周度审查] 无事件数据，写入空审查占位")
-            return
+            logger.info("[周度审查] 无事件数据，返回空审查占位")
+            return "本周未捕获风险事件，无法进行态势审查。"
 
         # 构建事件摘要
         events_summary_lines = []
@@ -643,17 +635,20 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         events_text = "\n".join(events_summary_lines)
 
         system_prompt = """你是一个 ESG 监控系统架构师。你会收到本周系统捕获的所有风险事件摘要。
-请分析当前监控矩阵的盲区，输出以下内容：
+请分析当前监控矩阵的盲区，并严格按照以下格式输出分析内容：
 
 1. **缺失实体**: 本周事件中出现了哪些未被纳入监控的重要企业/组织？
 2. **缺失关键词**: 哪些风险类型的关键词组合未被覆盖，导致可能漏报？
 3. **新兴威胁模式**: 本周事件中是否出现了新的制裁/立法/产业趋势，需要新增监控轨道？
 4. **具体建议**: 对 esg_sources.yaml 新增轨道的具体 YAML 配置建议。
 
-用中文输出，简洁专业。如果当前矩阵覆盖良好，直接说明"本周未发现明显盲区"。
-输出直接追加到周报文件，格式为 Markdown。"""
+【输出要求与限制】：
+- **绝对禁止包含任何对话性/寒暄性前言或尾注**。例如，不要包含类似于“好的，作为ESG监控系统架构师，我已分析本周捕获...”、“收到，分析如下：”或“希望这些建议对您有帮助”等任何客套话、自称或过渡句。
+- **直接以第1个标题或列表项开始输出**（即以 `1. **缺失实体**:` 开始）。
+- 用中文输出，简洁专业。如果当前矩阵覆盖良好，请直接输出“本周未发现明显盲区”，同样不加任何客套话。
+- 格式必须为规范的 Markdown。"""
 
-        user_message = f"以下是本周捕获的风险事件（共 {len(events)} 条，展示前 {min(len(events), 50)} 条）:\n\n{events_text}"
+        user_message = f"以下是本周捕获 of 风险事件（共 {len(events)} 条，展示前 {min(len(events), 50)} 条）:\n\n{events_text}"
 
         try:
             analysis = self._call_llm_cheap(
@@ -663,12 +658,8 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
             if analysis is None:
                 return None
 
-            # 追加到周报文件
-            section = f"\n\n---\n\n## 🔍 监控矩阵盲区分析\n\n{analysis}\n"
-            with open(report_path, "a", encoding="utf-8") as f:
-                f.write(section)
-            logger.info(f"[周度审查] 盲区分析已追加到 {report_path}")
-            return analysis
+            logger.info("[周度审查] 盲区分析 LLM 调用成功")
+            return analysis.strip()
 
         except Exception as e:
             logger.warning(f"[周度审查] LLM 调用失败 ({type(e).__name__}: {e})，跳过态势审查")
@@ -1338,6 +1329,8 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
             if not evs:
                 continue
             lines.append(f"- **【{cat_name}】**（{len(evs)} 条）")
+        if watch_events:
+            lines.append(f"- **【📡 战略观察清单】**（{len(watch_events)} 条）")
         lines.append("")
 
         lines += ["---", ""]
@@ -2147,19 +2140,6 @@ Output only valid JSON array, no markdown."""
                 lines.append("━━━━━━━━━━━━━━━━━━━━")
                 lines.append("")
 
-        # ── 周度盲区分析 (weekly only) ──
-        if mode == "weekly" and weekly_review_text:
-            # 盲区分析可能很长，在钉钉中做适度截断保留核心内容
-            review = weekly_review_text.strip()
-            if len(review) > 3000:
-                review = review[:3000] + "\n\n> ⚠️ 盲区分析过长已截断，完整内容请查看周报文件。"
-            lines.append("## 🔍 监控矩阵盲区分析")
-            lines.append("")
-            lines.append(review)
-            lines.append("")
-            lines.append("━━━━━━━━━━━━━━━━━━━━")
-            lines.append("")
-
         # ── 战略观察清单摘要（钉钉紧凑版，最多 5 条） ──
         if ding_watch:
             ding_watch_sorted = sorted(ding_watch, key=lambda e: str(e.get("date", "")), reverse=True)
@@ -2206,6 +2186,8 @@ Output only valid JSON array, no markdown."""
                 lines.append("")
             lines.append("━━━━━━━━━━━━━━━━━━━━")
             lines.append("")
+
+
 
         # ── 页脚 ──
         lines.append("🤖 由 ESG Intelligence Agent 自动生成 · 仅供决策参考")
@@ -2776,6 +2758,31 @@ Output only valid JSON array, no markdown."""
         self._last_valid_events = valid_events
         logger.info(f"Phase 5 done. Python pipeline: {len(intelligence_json)} valid items -> {report_path}")
 
+        # ── Phase 6: 周度威胁态势审查 (weekly only) ──
+        if mode == "weekly":
+            try:
+                # 盲区分析 LLM 调用
+                weekly_review = self._weekly_threat_landscape_review(all_v10_events)
+                self._weekly_review_text = weekly_review
+                if weekly_review:
+                    log_dir = Path("logs")
+                    log_dir.mkdir(exist_ok=True)
+                    log_path = log_dir / "matrix_optimization_suggestions.md"
+                    log_path.write_text(weekly_review, encoding="utf-8")
+                    logger.info("监控矩阵盲区分析已生成，请在后台日志中查看优化建议。")
+            except Exception as e:
+                self._weekly_review_text = None
+                logger.warning(f"Weekly threat review failed ({e})")
+
+        # ── Token 消耗摘要 + 追加到报告底部 ────────────
+        token_summary = self._log_token_summary()
+        try:
+            token_footer = f"\n\n---\n\n{token_summary}\n"
+            with open(report_path, "a", encoding="utf-8") as rf:
+                rf.write(token_footer)
+        except Exception:
+            pass
+
         # ── 报告归档 (按日期) ───────────────────────────────
         try:
             archive_dir = Path(report_path).parent / "reports"
@@ -2798,24 +2805,6 @@ Output only valid JSON array, no markdown."""
         dmin = min(date_values) if date_values else "?"
         dmax = max(date_values) if date_values else "?"
         logger.info(f"All done in {elapsed:.1f}s | {len(intelligence_json)} valid items | {dmin} ~ {dmax}")
-
-        # ── Token 消耗摘要 + 追加到报告底部 ────────────
-        token_summary = self._log_token_summary()
-        try:
-            token_footer = f"\n\n---\n\n{token_summary}\n"
-            with open(report_path, "a", encoding="utf-8") as rf:
-                rf.write(token_footer)
-        except Exception:
-            pass
-
-        # ── Phase 6: 周度威胁态势审查 (weekly only) ──
-        if mode == "weekly":
-            try:
-                weekly_review = self._weekly_threat_landscape_review(all_v10_events, report_path, token_summary)
-                self._weekly_review_text = weekly_review
-            except Exception as e:
-                self._weekly_review_text = None
-                logger.warning(f"Weekly threat review failed ({e}), weekly report unaffected")
 
         # ── 运行指标收集 ─────────────────────────────────
         self._collect_metrics(mode, elapsed, len(all_v10_events), len(valid_events), len(intelligence_json))

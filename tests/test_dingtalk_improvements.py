@@ -330,4 +330,37 @@ class TestUrlPrefixMapping:
         assert resolved2["source_urls"][0] == full_url
 
 
+class TestWeeklyReportDingtalkStructure:
+    def test_weekly_review_isolated_from_dingtalk(self):
+        events = [
+            _event(
+                entity="华友钴业",
+                core_event_title_en="Weekly event",
+                display_title_zh="周报测试事件",
+                materiality="🟡 战略观察",
+                is_direct_material_impact=False,
+            )
+        ]
+        
+        review_text = "1. **缺失实体**: Jervois Global\n2. **缺失关键词**: 镍精炼\n3. **新兴威胁模式**: 巴西镍供应链\n4. **具体建议**: YAML configuration"
+        
+        content = ESGIntelligenceAgent._format_for_dingtalk(
+            events,
+            "weekly",
+            "2026-07-02 23:14",
+            "2026-06-24",
+            "2026-07-01",
+            weekly_review_text=review_text,
+        )
+        
+        # Check that directory and body do NOT contain weekly review or references to it
+        assert "- 🔍 **监控矩阵盲区分析**" not in content
+        assert "## 🔍 监控矩阵盲区分析" not in content
+        assert "巴西镍供应链" not in content
+        
+        # Check that strategic observations are still present
+        assert "## 📡 战略观察清单" in content
+
+
+
 

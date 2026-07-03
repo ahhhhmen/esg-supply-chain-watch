@@ -41,6 +41,8 @@ This document defines the core domain rules and logic constraints for this speci
 - **PDF 归档**：`reports/YYYY-MM-DD_{mode}.pdf`。
 - **Notion 双库**：ESG Risk + ESG Practice，SHA-256 确定性 External ID 幂等 upsert。
 - **钉钉推送**：采用优化视觉层级的 Markdown 块状可视化排版，在标题中嵌入超链接直接跳转至洗白后的原文，其余判定依据、高管洞察及来源统计均收纳在引用块（`>`）中，极大降低认知负荷。
+- **周报排版与归档顺序**：周报（及推送消息）目录必须列出「📡 战略观察清单」及「🔍 监控矩阵盲区分析」。在排版上，盲区分析必须放置在战略观察清单之后、页脚之前。主引擎执行时，必须先生成盲区分析并插入报告，再追加 Token 消耗脚标，最后执行报告的 MD 归档与 PDF 转换，以确保归档文件完整。
+- **盲区分析 LLM 约束**：盲区分析 System Prompt 内含严格负向约束，绝对禁止输出任何对话性、寒暄性前言（例如“好的，作为ESG监控系统架构师...”），必须直接输出以 markdown 列表或标题开头的分析内容。
 - **Metrics**：`metrics.jsonl` 追加式运行指标（时间戳、模式、token 用量、成本、事件数、风险分布）。
 - GitHub Actions 三条定时工作流：daily（周一至四、六日）、weekly（周四）、practice（周三），均在 UTC 22:00。
 - 成本追踪：$0.14/M input tokens、$0.28/M output tokens。

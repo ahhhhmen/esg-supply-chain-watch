@@ -48,11 +48,13 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         
-        # 检查报告文件是否有更新
+        # 检查报告文件和去重记忆库是否有更新
         if [ -f "esg_global_report.md" ]; then
           git add esg_global_report.md
-          git diff-index --quiet HEAD || git commit -m "🤖 每日自动更新: 舆情简报 ($(date +'%Y-%m-%d %H:%M'))"
-          git push
-        else
-          echo "警告：未检测到生成的报告文件。"
         fi
+        if [ -f "logs/processed_urls.json" ]; then
+          git add logs/processed_urls.json
+        fi
+        
+        git diff-index --quiet HEAD || git commit -m "🤖 每日自动更新: 舆情简报与去重记忆库 ($(date +'%Y-%m-%d %H:%M'))"
+        git push

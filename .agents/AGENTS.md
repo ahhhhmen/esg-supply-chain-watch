@@ -28,6 +28,9 @@ This document defines the core domain rules and logic constraints for this speci
 - **Fail-closed 设计**：LLM JSON 提取失败的批次整体丢弃，不降级为原始数据。
 - **双重重要性分级**：直接影响（红色）vs 战略观察（黄色），观察级不推钉钉主报告。
 - **Google News 密文解码**：在 `SourcingEngine` 及 `resolve_news_url` 中置入本地 Base64-Protobuf 解码器，自动解析 `news.google.com/rss/articles/` 中的原始真实链接，彻底避免 400 Bad Request 错误及网络请求延迟。
+- **持久化去重记忆库 (Persistent Cache)**：在 `logs/processed_urls.json` 中记录过去 14 天内已处理的文章链接 (URL)，SourcingEngine 在初始化时自动加载并清理过期记录，在抓取解析的 loop 中第一时间拦截已存在链接，防止重复数据进入大模型。新 URL 会在汇总后增量写入文件。
+- **LLM 时间校验铁律 (Prompt Reinforcement)**：大模型 System Prompt 强制注入系统时间 `今天是 {current_date}。` 并增加绝对阻断指令：任何早于限制时间（每日模式 48 小时，周报/实践模式 7 天）的事件直接判定为失效情报（is_valid_risk/is_valid_practice 设为 false）进行拦截过滤。
+
 
 ## 4. Configuration & Sources
 - `config.yaml`（222 行）：12 家公司、4 地理轨、多语言风险主题关键词、排除模式。
@@ -46,11 +49,20 @@ This document defines the core domain rules and logic constraints for this speci
 - **Metrics**：`metrics.jsonl` 追加式运行指标（时间戳、模式、token 用量、成本、事件数、风险分布）。
 - GitHub Actions 三条定时工作流：daily（周一至四、六日）、weekly（周四）、practice（周三），均在 UTC 22:00。
 - 成本追踪：$0.14/M input tokens、$0.28/M output tokens。
+- **记忆库自动推送**：GitHub Actions 工作流（每日/地缘周报/实践周报）跑批完成后，自动将更新后的 `logs/processed_urls.json` 进行 git add, commit 并 push 推送回代码仓库，保证次日虚拟机加载最新记忆。
+
 
 ## 6. Local-First & Privacy Constraints
 - `.env` 含真实 API 密钥，已在 `.gitignore` 中排除。
 - 所有输出（reports/、pdfs/、*.pdf）已 gitignore。
 - Notion 幂等写入设计文档：`docs/notion_idempotent.md`。
+
+## 7. Long-Term Agent Memory
+- 对话中的关键共识不会自动写入仓库文件；需要长期保留的规则、业务判断、Prompt 约束和工作流约定，必须由用户明确要求后沉淀到本文件。
+- 本文件是长期记忆的单一事实源；`CLAUDE.md`、`.cursorrules`、`.windsurfrules`、`.github/copilot-instructions.md` 均应通过软链接或同步内容指向本文件，避免多处规则漂移。
+- 新增长期记忆时，只记录稳定、可复用、会影响未来实现或判断的规则；不要记录一次性任务过程、临时日志、敏感密钥、个人隐私或尚未确认的猜测。
+- 修改长期记忆时，应优先追加到最相关章节；若规则会改变既有行为，必须明确写出新规则的适用范围，避免覆盖原有业务红线。
+- 当前已确认的 Prompt 质量规则：`esg_intelligence_agent.py` 中主风险分析与良好实践分析的 System Prompt 必须包含语言质量硬约束，要求输出文本符合资深商业顾问行文规范，并在输出前进行自我语病审查，确保语言精炼、专业、流畅，禁止词句重复或语法结构杂糅。
 
 ---
 

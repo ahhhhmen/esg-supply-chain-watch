@@ -219,9 +219,11 @@ class ESGIntelligenceAgent:
     @classmethod
     def _build_system_prompt(cls, company_names: list[str], mode: str) -> str:
         """构建 DeepSeek System Prompt - v11 华友钴业中心制。"""
+        current_date = datetime.now().strftime("%Y-%m-%d")
         companies_str = "\n".join(f"  - {name}" for name in company_names)
-        _ = mode  # 保留参数但不参与 prompt 构建（新 prompt 统一处理）
+        limit_str = "过去 7 天" if mode in ("weekly", "practice") else "过去 48 小时"
         return f"""# Role: ESG 供应链风险数据提取引擎
+今天是 {current_date}。
 
 # Objective
 你是一个结构化数据提取引擎。你的任务是读取一组繁杂的新闻流，将其清洗、去重、分类，并严格输出为 JSON 格式。
@@ -282,6 +284,9 @@ class ESGIntelligenceAgent:
    当 is_direct_material_impact=false 时，executive_insight 必须如实写为：
    "该事件属于车企终端运营/技术故障，当前链条未传导至上游材料端。"
    严禁在 is_direct_material_impact=false 的情况下生搬硬套任何「订单波动」「供应链不确定性」「材料需求变化」等废话。
+
+5. 时间时效过滤（绝对阻断指令）：
+   你必须严格审查每条新闻的发生日期。如果该事件发生时间早于{limit_str}，你必须判定它为失效情报，直接忽略（即在 JSON 输出中将 is_valid_risk 设置为 false，且 risk_category 设置为 "无关噪音"），绝不能将其输出到最终的战略观察或风险清单中。
 
 # Executive Insight 生成规则（严格执行 — 华友钴业中心制）
 1. 身份锚定：华友钴业是全球领先的新能源锂电上游材料供应商，主营前驱体（Precursor）与正极材料（Cathode Active Material），核心下游客户包括特斯拉、宝马、奔驰、大众等全球主机厂及电池制造商。所有 insight 必须从华友钴业的产业位置出发进行传导推演。
@@ -347,9 +352,11 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
     @classmethod
     def _build_practice_system_prompt(cls, company_names: list[str], mode: str) -> str:
         """构建 Practice System Prompt — 同业良好实践提取引擎。"""
+        current_date = datetime.now().strftime("%Y-%m-%d")
         companies_str = "\n".join(f"  - {name}" for name in company_names)
         _ = mode
         return f"""# Role: ESG 良好实践提取引擎
+今天是 {current_date}。
 
 # Objective
 你是一个结构化数据提取引擎，专注于从新闻流中识别和提取【可复制的行业良好实践】。你的输出将用于同业对标学习，而非风险监控。
@@ -418,6 +425,9 @@ sources 字段中的每个元素必须包含 name（媒体名称）和 url（新
    · 纯粹品牌/消费品营销（Apple 零售店碳中和认证 → false, 不适用于矿业）
    · 与华友业务完全无关的领域（互联网公司数据中心效率、金融业绿色债券）
    · 规模/资源要求远超华友当前能力且无中间路径
+
+5. 时间时效过滤（绝对阻断指令）：
+   你必须严格审查每条实践新闻的发生日期。如果该实践发生时间早于过去 7 天，你必须判定它为失效情报，直接忽略（即在 JSON 输出中将 is_valid_practice 设置为 false），绝不能将其作为有效实践输出。
 
 # Learning Insight 生成规则（华友钴业学习视角）
 1. 身份锚定：华友钴业是全球领先的新能源锂电上游材料供应商，主营前驱体与正极材料。所有 insight 必须从"华友可借鉴什么"的视角出发。

@@ -5,6 +5,7 @@ SourcingEngine — 声明式配置驱动的 ESG 多轨道供料引擎。
 """
 
 import base64
+import json
 import logging
 import re
 import time
@@ -40,6 +41,28 @@ class SourcingEngine:
             len(self.sources),
         )
 
+        # 加载轻量级 URL 记忆库 (Persistent Cache)
+        self.cache_path = Path(__file__).parent / "logs" / "processed_urls.json"
+        self.processed_urls: Dict[str, str] = {}
+        if self.cache_path.exists():
+            try:
+                with open(self.cache_path, "r", encoding="utf-8") as f:
+                    self.processed_urls = json.load(f)
+            except Exception as e:
+                logger.warning("Failed to load processed_urls.json: %s", e)
+
+        # 整理/剪除 14 天前的记录
+        cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+        pruned_cache = {}
+        for u, ts_str in self.processed_urls.items():
+            try:
+                ts = datetime.fromisoformat(ts_str)
+                if ts >= cutoff:
+                    pruned_cache[u] = ts_str
+            except Exception:
+                pruned_cache[u] = ts_str
+        self.processed_urls = pruned_cache
+
     def _decode_google_news_url(self, url: str) -> str:
         if "news.google.com/rss/articles/" not in url:
             return url
@@ -59,6 +82,33 @@ class SourcingEngine:
             except Exception:
                 pass
         return url
+
+    def _save_processed_urls(self, urls: List[str]) -> None:
+        """保存新抓取到的 URL，并更新/清洗 14 天前的记录"""
+        now_str = datetime.now(timezone.utc).isoformat()
+        for url in urls:
+            if url:
+                self.processed_urls[url] = now_str
+
+        # 整理/剪除 14 天前的记录
+        cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+        pruned_cache = {}
+        for u, ts_str in self.processed_urls.items():
+            try:
+                ts = datetime.fromisoformat(ts_str)
+                if ts >= cutoff:
+                    pruned_cache[u] = ts_str
+            except Exception:
+                pruned_cache[u] = ts_str
+        self.processed_urls = pruned_cache
+
+        # 确保 logs 目录存在并写入
+        try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.cache_path, "w", encoding="utf-8") as f:
+                json.dump(self.processed_urls, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error("Failed to save processed_urls.json: %s", e)
 
     # ------------------------------------------------------------------
     # Public API
@@ -86,6 +136,9 @@ class SourcingEngine:
 
             except Exception:
                 logger.exception("[%s] fetch failed — continuing to next source", src_id)
+
+        # 汇总数据后，将抓取到的新 URL 写入持久化记忆库
+        self._save_processed_urls([item["link"] for item in all_results])
 
         logger.info("Total aggregated items: %d", len(all_results))
         return all_results
@@ -148,6 +201,11 @@ class SourcingEngine:
                     raw_link = getattr(feed_entry, "link", "")
                     decoded_link = self._decode_google_news_url(raw_link)
                     link = resolve_news_url(decoded_link)
+
+                    # 核心拦截逻辑：检查已存在于 processed_urls.json
+                    if link in self.processed_urls:
+                        continue
+
                     summary = getattr(feed_entry, "summary", "")
                     content_body = f"{title}\n{summary}".strip()
 
@@ -194,6 +252,9 @@ class SourcingEngine:
                         "[%s] future raised %s",
                         entry.get("source_id", "?"), exc,
                     )
+
+        # 汇总数据后，将抓取到的新 URL 写入持久化记忆库
+        self._save_processed_urls([item["link"] for item in all_results])
 
         logger.info(
             "Dynamic URL fetch complete: %d/%d URLs processed, %d total items",
@@ -264,6 +325,11 @@ class SourcingEngine:
             raw_link = getattr(entry, "link", "")
             decoded_link = self._decode_google_news_url(raw_link)
             link = resolve_news_url(decoded_link)
+
+            # 核心拦截逻辑：检查已存在于 processed_urls.json
+            if link in self.processed_urls:
+                continue
+
             summary = getattr(entry, "summary", "")
             content_body = f"{title}\n{summary}".strip()
 
@@ -296,6 +362,12 @@ class SourcingEngine:
         dom_selector: str = source.get("dom_selector", "body")
 
         clean_url = self._extract_url(raw_url)
+
+        # 核心拦截逻辑：检查已存在于 processed_urls.json
+        if clean_url in self.processed_urls:
+            logger.info("[%s] HTML URL '%s' already in processed cache — skipped", source_id, clean_url)
+            return []
+
         logger.debug("[%s] fetching %s → selector '%s'", source_id, clean_url, dom_selector)
 
         headers = {

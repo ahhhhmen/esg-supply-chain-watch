@@ -19,13 +19,48 @@ class _TokenUsage:
 
 radar_infra = types.ModuleType("radar_infra")
 radar_infra_llm = types.ModuleType("radar_infra.llm")
+radar_infra_fetch = types.ModuleType("radar_infra.fetch")
+radar_infra_guard = types.ModuleType("radar_infra.guard")
+radar_infra_sink = types.ModuleType("radar_infra.sink")
+radar_infra_sink_dingtalk = types.ModuleType("radar_infra.sink.dingtalk")
+
 radar_infra_llm.create_provider = lambda: None
 radar_infra_llm.create_cheap_provider = lambda: None
 radar_infra_llm.BaseLLMProvider = object
 radar_infra_llm.TokenUsage = _TokenUsage
 radar_infra_llm.create_llm_retry_decorator = lambda max_attempts=1: (lambda fn: fn)
+
+radar_infra_fetch.extract_article_body = lambda url, min_length=0, max_length=0: "mocked_body"
+
+import json
+def _safe_json_parse(text):
+    try:
+        return json.loads(text)
+    except Exception:
+        import re
+        m = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(1))
+            except Exception:
+                pass
+        return None
+radar_infra_guard.safe_json_parse = _safe_json_parse
+
+import hashlib
+def _generate_external_id(*parts):
+    raw = "|".join(parts)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+radar_infra_sink.generate_external_id = _generate_external_id
+
+radar_infra_sink_dingtalk.send_dingtalk = lambda *a, **k: True
+
 sys.modules.setdefault("radar_infra", radar_infra)
 sys.modules.setdefault("radar_infra.llm", radar_infra_llm)
+sys.modules.setdefault("radar_infra.fetch", radar_infra_fetch)
+sys.modules.setdefault("radar_infra.guard", radar_infra_guard)
+sys.modules.setdefault("radar_infra.sink", radar_infra_sink)
+sys.modules.setdefault("radar_infra.sink.dingtalk", radar_infra_sink_dingtalk)
 
 from esg_intelligence_agent import ESGIntelligenceAgent
 

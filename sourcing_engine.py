@@ -12,6 +12,10 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import socket
+
+# Prevent infinite blocking on feedparser.parse by setting a global timeout of 15 seconds
+socket.setdefaulttimeout(15)
 
 import feedparser
 import requests

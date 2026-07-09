@@ -4,11 +4,10 @@ ESG 智能监控 Agent 模块 v2。
 模块化架构：
   esg_agent/
   ├── config.py         — AgentConfig, QueryItem, NewsArticle, 常量
-  ├── fetchers.py       — ContentExtractor, NewsFetcher, resolve_news_url, strip_html
+  ├── fetchers.py       — resolve_news_url, strip_html (新闻抓取/清洗)
   ├── filters.py        — EntityFilter (实体校验)
-  ├── llm_client.py     — DeepSeekClient (LLM API 封装)
   ├── deduplication.py  — JaccardMerger, LLMGlobalConvergence (去重合并)
-  ├── reporters.py      — MarkdownReportWriter, DingTalkPusher, NotionPusher
+  ├── reporters.py      — MarkdownReportWriter
   └── validators.py     — Pydantic 配置验证 (ConfigSchema, validate_config)
 """
 
@@ -20,7 +19,7 @@ from esg_agent.config import (
 )
 
 from esg_agent.fetchers import (
-    ContentExtractor, NewsFetcher, resolve_news_url, strip_html,
+    resolve_news_url, strip_html,
 )
 
 from esg_agent.filters import EntityFilter
@@ -33,8 +32,6 @@ __all__ = [
     "NewsArticle",
     "FETCH_HEADERS",
     "DINGTALK_WEBHOOK_URL",
-    "ContentExtractor",
-    "NewsFetcher",
     "resolve_news_url",
     "strip_html",
     "EntityFilter",

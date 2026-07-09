@@ -16,7 +16,6 @@ notion_upsert.py — 幂等 Notion 写入助手
 ═══════════════════════════════════════════════════════════════════════════════
 """
 
-import hashlib
 import logging
 import re
 from typing import Any, Callable, Optional
@@ -29,6 +28,7 @@ from notion_mapping import (
 )
 from esg_agent.canonical import canonical_external_id, canonical_event_key, fallback_english_title
 from esg_agent.fetchers import resolve_news_url
+from radar_infra.sink import generate_external_id
 
 logger = logging.getLogger("notion_upsert")
 
@@ -66,24 +66,6 @@ def _build_sources_rich_text(sources_text: Any) -> list[dict]:
     if text:
         rich_text.append({"text": {"content": text[:2000]}})
     return rich_text
-
-
-def generate_external_id(entity: str, date: str, title: str) -> str:
-    """
-    为事件生成确定性 External ID。
-
-    使用 SHA-256 前 12 位十六进制字符，碰撞概率 < 10^-9。
-
-    Args:
-        entity: 企业名称
-        date: 事件日期 (YYYY-MM-DD)
-        title: 事件标题
-
-    Returns:
-        12 位十六进制 External ID 字符串
-    """
-    raw = f"{entity}|{date}|{title}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
 
 
 def query_page_by_external_id(

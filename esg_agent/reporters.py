@@ -4,21 +4,15 @@ esg_agent.reporters — Markdown 报告生成与推送
 """
 
 from __future__ import annotations
-import json
 import logging
-import os
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
-import requests
 
-from notion_client import Client as NotionClient
-
-from .config import DINGTALK_WEBHOOK_URL, AgentConfig
-from notion_upsert import upsert_notion_page
+from .config import AgentConfig
 
 logger = logging.getLogger("esg_agent")
 
@@ -180,54 +174,3 @@ class MarkdownReportWriter:
 
         parts.append("---\n\n")
         return [p for p in parts if p]
-
-
-class DingTalkPusher:
-    """钉钉推送封装"""
-
-    @staticmethod
-    def push(content: str, webhook: str = None) -> None:
-        webhook = webhook or os.environ.get("DINGTALK_WEBHOOK", "")
-        if not webhook:
-            logger.info("DINGTALK_WEBHOOK not configured, skip")
-            return
-        headers = {"Content-Type": "application/json"}
-        data = {"msgtype": "markdown", "markdown": {"title": "ESG Report", "text": content}}
-        try:
-            resp = requests.post(webhook, headers=headers, data=json.dumps(data))
-            logger.info(f"DingTalk response: {resp.text}")
-        except Exception as exc:
-            logger.error(f"DingTalk push failed: {exc}")
-
-
-class NotionPusher:
-    """Notion 推送封装（External ID 幂等写入）"""
-
-    @staticmethod
-    def push(events: list[dict], database_id: str = None, token: str = None, mode: str = "daily") -> None:
-        token = token or os.environ.get("NOTION_TOKEN", "")
-        database_id = database_id or os.environ.get("NOTION_DATABASE_ID", "")
-        if not token or not database_id:
-            logger.info("Notion not configured, skip")
-            return
-        if not events:
-            logger.info("No events to push to Notion")
-            return
-
-        notion = NotionClient(auth=token)
-        today = datetime.now().strftime("%Y-%m-%d")
-        success = fail = 0
-
-        for event in events:
-            event.setdefault("mode", mode)
-            event.setdefault("push_date", today)
-            try:
-                action, page_id = upsert_notion_page(event, notion, database_id, dry_run=False)
-                if action in ("created", "updated"):
-                    success += 1
-                logger.info(f"Notion {action} | {event.get('entity', '?')} | {event.get('display_title_zh', '?')[:40]}")
-            except Exception as exc:
-                fail += 1
-                logger.warning(f"Notion push failed: {exc}")
-
-        logger.info(f"Notion push done: {success} success / {fail} fail / {len(events)} total")

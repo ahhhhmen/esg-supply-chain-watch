@@ -46,8 +46,11 @@ from esg_agent.config import (
     _GEO_CN_LANGS,
 )
 from esg_agent.fetchers import (
-    ContentExtractor, NewsFetcher, resolve_news_url, strip_html,
+    resolve_news_url, strip_html,
 )
+from radar_infra.fetch import extract_article_body
+from radar_infra.guard import safe_json_parse
+from radar_infra.sink.dingtalk import send_dingtalk
 from esg_agent.canonical import canonical_event_key
 from esg_agent.filters import EntityFilter
 from esg_agent.deduplication import JaccardMerger, LLMGlobalConvergence
@@ -702,18 +705,10 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
             logger.warning("_extract_events_object: no JSON object found in LLM response.")
             return None
         candidate = match.group(0)
-        try:
-            parsed = json.loads(candidate)
-        except json.JSONDecodeError:
-            # 自动修复常见 LLM JSON 错误
-            repaired = cls._repair_llm_json(candidate)
-            if repaired is None:
-                return None
-            try:
-                parsed = json.loads(repaired)
-            except json.JSONDecodeError as e2:
-                logger.warning(f"_extract_events_object: JSON parse failed after repair: {e2}")
-                return None
+        parsed = safe_json_parse(candidate)
+        if not parsed:
+            logger.warning("_extract_events_object: JSON parse failed.")
+            return None
         # 步骤3: 结构校验
         if not isinstance(parsed, dict):
             logger.warning("_extract_events_object: parsed result is not a dict/object.")
@@ -791,62 +786,7 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                         source["url"] = fallback["url"]
         return event
 
-    @staticmethod
-    def _repair_llm_json(text: str) -> Optional[str]:
-        """尝试修复 LLM 产出的常见 JSON 格式错误。
 
-        处理策略（按优先级）：
-        1. 删除尾部多余的右花括号或方括号（LLM 常多输出一个 `]}` 或 `}}`）
-        2. 修复对象/数组中的尾随逗号：`{"a": 1,}` → `{"a": 1}`
-        3. 替换智能引号：" " → " "
-        4. 补齐缺失的闭合括号（依据开闭括号计数）
-
-        Returns:
-            修复后的 JSON 字符串，无法修复则返回 None。
-        """
-        if not text:
-            return None
-
-        t = text.strip()
-
-        # 策略 1: 删除尾部多余闭合符号
-        # 常见模式：`}]}` → `}]` 或 `}}}` → `}}`
-        import re as _re
-
-        while len(t) > 2 and t[-1] in "}]":
-            trial = t[:-1]
-            try:
-                json.loads(trial)
-                return trial
-            except json.JSONDecodeError:
-                t = trial
-
-        # 策略 2: 修复尾随逗号（在 } 或 ] 前）
-        # 匹配 }, ] 模式
-        t = _re.sub(r",(\s*[}\]])", r"\1", t)
-
-        # 策略 3: 替换智能引号
-        t = t.replace("\u201c", '"').replace("\u201d", '"')  # " "
-        t = t.replace("\u2018", "'").replace("\u2019", "'")  # ' '
-
-        # 策略 4: 补齐缺失闭合括号
-        # 统计每种括号的开闭数量差
-        open_count = t.count("{") - t.count("}")
-        close_count = t.count("[") - t.count("]")
-        if open_count > 0 and close_count > 0:
-            # 先关对象再关数组
-            t += "}" * open_count
-            t += "]" * close_count
-        elif open_count > 0:
-            t += "}" * open_count
-        elif close_count > 0:
-            t += "]" * close_count
-
-        try:
-            json.loads(t)
-            return t
-        except json.JSONDecodeError:
-            return None
 
     # ── 语义合并常量 ──────────────────────────────────────
     _MERGE_SIMILARITY_THRESHOLD = 0.45  # Jaccard 相似度阈值：>= 此值视为同一事件
@@ -2356,11 +2296,18 @@ Output only valid JSON array, no markdown."""
                 notion_url = f"https://app.notion.com/p/fangxie/{db_id}"
                 ding_content += f"\n\n📋 [查看完整数据库]({notion_url})"
 
-            headers = {"Content-Type": "application/json"}
-            data = {"msgtype": "markdown", "markdown": {"title": ding_title, "text": ding_content}}
             logger.info("正在向钉钉发送情报简报...")
-            response = requests.post(webhook, headers=headers, data=json.dumps(data))
-            logger.info(f"钉钉服务器返回: {response.text}")
+            secret = os.environ.get("DINGTALK_SECRET")
+            success = send_dingtalk(
+                webhook_url=webhook,
+                markdown_text=ding_content,
+                title=ding_title,
+                secret=secret
+            )
+            if success:
+                logger.info("钉钉推送成功")
+            else:
+                logger.warning("钉钉推送失败")
         except Exception as exc:
             logger.error(f"钉钉推送失败: {exc}")
 
@@ -2619,7 +2566,7 @@ Output only valid JSON array, no markdown."""
 
         def _extract_one(idx_article):
             idx, article = idx_article
-            body = ContentExtractor.extract(article.url)
+            body = extract_article_body(article.url, min_length=15, max_length=200)
             return idx, body
 
         _EXTRACT_WORKERS = 10  # 正文抓取比 RSS 更重，保守设置 10 workers

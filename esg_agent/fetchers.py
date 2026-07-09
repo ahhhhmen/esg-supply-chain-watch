@@ -18,7 +18,7 @@ logger = logging.getLogger("esg_agent")
 
 
 _HTTP_URL_RE = re.compile(r"https?://[^\s\"'<>\\]+", re.I)
-_GOOGLE_HOST_RE = re.compile(r"(^|\.)(google|gstatic|googleusercontent|youtube|ytimg)\.", re.I)
+_GOOGLE_HOST_RE = re.compile(r"(^|\.)(google|gstatic|googleusercontent|youtube|ytimg|google-analytics|googletagmanager)\.", re.I)
 
 
 def _is_google_url(url: str) -> bool:
@@ -27,6 +27,46 @@ def _is_google_url(url: str) -> bool:
     except Exception:
         return False
     return bool(_GOOGLE_HOST_RE.search(host))
+
+
+def _is_valid_news_url(url: str) -> bool:
+    if not url:
+        return False
+    
+    # 1. 基础谷歌域名过滤
+    if _is_google_url(url):
+        return False
+        
+    try:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        path = parsed.path.lower()
+    except Exception:
+        return False
+        
+    # 2. 拦截第三方流量统计、社交分享、广告追踪等非新闻域名
+    ignored_hosts = (
+        "google-analytics.com",
+        "googletagmanager.com",
+        "googlesyndication.com",
+        "googleadservices.com",
+        "doubleclick.net",
+        "facebook.com",
+        "twitter.com",
+        "linkedin.com",
+    )
+    if any(ih in host for ih in ignored_hosts):
+        return False
+        
+    # 3. 拦截静态资源后缀，避免抓取到 js/css/图片等资产
+    static_extensions = (
+        ".js", ".css", ".png", ".jpg", ".jpeg", ".gif", 
+        ".svg", ".ico", ".woff", ".woff2", ".mp4", ".mp3"
+    )
+    if path.endswith(static_extensions):
+        return False
+        
+    return True
 
 
 def _clean_candidate_url(raw: str) -> str:
@@ -51,19 +91,19 @@ def _extract_original_from_html(html_text: str) -> str:
         if tag:
             value = tag.get("href") or tag.get("content") or ""
         value = _clean_candidate_url(value)
-        if value and value.startswith("http") and not _is_google_url(value):
+        if value and value.startswith("http") and _is_valid_news_url(value):
             return value
 
     for a in soup.find_all("a", href=True):
         href = _clean_candidate_url(a.get("href", ""))
         if href.startswith("./articles/"):
             continue
-        if href.startswith("http") and not _is_google_url(href):
+        if href.startswith("http") and _is_valid_news_url(href):
             return href
 
     for candidate in _HTTP_URL_RE.findall(html_text):
         candidate = _clean_candidate_url(candidate)
-        if candidate.startswith("http") and not _is_google_url(candidate):
+        if candidate.startswith("http") and _is_valid_news_url(candidate):
             return candidate
     return ""
 
@@ -95,13 +135,13 @@ def resolve_news_url(url: str, timeout: int = 5) -> str:
     for key in ("url", "u", "q"):
         for val in qs.get(key, []):
             candidate = _clean_candidate_url(val)
-            if candidate.startswith("http") and not _is_google_url(candidate):
+            if candidate.startswith("http") and _is_valid_news_url(candidate):
                 return candidate
 
     try:
         resp = requests.head(url, headers=FETCH_HEADERS, allow_redirects=True, timeout=timeout)
         final = resp.url
-        if final != url and not _is_google_url(final) and len(final) > 15 and final.lower().startswith("http"):
+        if final != url and _is_valid_news_url(final) and len(final) > 15 and final.lower().startswith("http"):
             return final
     except Exception as exc:
         logger.debug(f"URL HEAD resolve failed: {exc}")
@@ -109,7 +149,7 @@ def resolve_news_url(url: str, timeout: int = 5) -> str:
     try:
         resp = requests.get(url, headers=FETCH_HEADERS, allow_redirects=True, timeout=timeout)
         final = resp.url
-        if final != url and not _is_google_url(final) and len(final) > 15 and final.lower().startswith("http"):
+        if final != url and _is_valid_news_url(final) and len(final) > 15 and final.lower().startswith("http"):
             return final
         candidate = _extract_original_from_html(resp.text)
         if candidate:

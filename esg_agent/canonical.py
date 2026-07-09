@@ -94,15 +94,11 @@ def _date_bucket(date: str, days: int = 7) -> str:
 def semantic_event_signature(event: dict) -> str:
     """Build a deterministic incident-family signature from stable event facts."""
     entity_key = canonical_entity(str(event.get("entity", "")))
-    title = _norm(
-        event.get("display_title_zh")
-        or event.get("title")
-        or event.get("core_event_title_en")
-        or event.get("english_title")
-        or ""
-    )
-    insight = _norm(event.get("insight") or event.get("executive_insight") or "")
-    text = " ".join(x for x in (entity_key, title, insight) if x)
+    
+    # 优先并聚合所有潜在的标题（不含动态生成的 insight），确保规则判定有充足的输入
+    title_zh = _norm(event.get("display_title_zh") or event.get("title") or "")
+    title_en = _norm(event.get("core_event_title_en") or event.get("english_title") or "")
+    text = " ".join(x for x in (entity_key, title_zh, title_en) if x)
 
     signals: list[str] = []
     for label, patterns in _SIGNAL_GROUPS.items():
@@ -121,15 +117,11 @@ def semantic_event_signature(event: dict) -> str:
 def canonical_event_key(event: dict) -> str:
     entity = _norm(event.get("entity", ""))
     entity_key = canonical_entity(entity)
-    title = _norm(
-        event.get("display_title_zh")
-        or event.get("title")
-        or event.get("core_event_title_en")
-        or event.get("english_title")
-        or ""
-    )
-    insight = _norm(event.get("insight") or event.get("executive_insight") or "")
-    text = " ".join(x for x in (entity, title, insight) if x)
+    
+    # 对规则匹配用到的 text 同样剔除 insight
+    title_zh = _norm(event.get("display_title_zh") or event.get("title") or "")
+    title_en = _norm(event.get("core_event_title_en") or event.get("english_title") or "")
+    text = " ".join(x for x in (entity, title_zh, title_en) if x)
 
     if _has(entity, r"大众|volkswagen|vw") and _has(
         text,
@@ -183,7 +175,17 @@ def canonical_event_key(event: dict) -> str:
     if semantic_key:
         return semantic_key
 
-    tokens = _TOKEN_RE.findall(text)
+    # 终极 Fallback Token Key 逻辑：为了极致的去重稳定性，
+    # 仅使用 canonical entity 与 core_event_title_en（英文核心标题）生成 key。
+    # 这样大模型就算微调了 display_title_zh 或生成了不同的分析 insight，External ID 依然完全保持一致。
+    title_stable = _norm(
+        event.get("core_event_title_en")
+        or event.get("display_title_zh")
+        or event.get("title")
+        or event.get("english_title")
+        or ""
+    )
+    tokens = _TOKEN_RE.findall(f"{entity} {title_stable}")
     compact = "-".join(tokens[:12]) or "unknown"
     return f"event:v1:{entity_key}:{_date_bucket(str(event.get('date', '')))}:{compact}"
 

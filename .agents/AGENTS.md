@@ -24,10 +24,10 @@ This document defines the core domain rules and logic constraints for this speci
 - **三层采集**：静态 RSS + 动态查询矩阵 + AI 发现查询（Phase 0.5）。
 - **实体过滤器**：正则匹配 12 家目标公司名（支持 CJK），垃圾/赌博关键词黑名单。
 - **去重**：Jaccard 词级相似度（阈值 0.45）+ LLM 跨批次语义收敛。
-- **规范化事件键**：`canonical_event_key()` 使用实体别名、信号组、日期分桶生成稳定键值。
+- **规范化事件键与稳定 External ID**：`canonical_event_key()` 使用实体别名、信号组、日期分桶生成稳定键值。**严禁**将非确定性的大模型解读（`insight`/`executive_insight`）混入 Key 和 External ID 计算中。**优先使用** `core_event_title_en`（标准英文短摘要）联合 `entity` 生成 Fallback Token Key，确保多次跑批或大模型局部变动时算出的 External ID 强确定性一致，防止 Notion 产生重复记录。
 - **Fail-closed 设计**：LLM JSON 提取失败的批次整体丢弃，不降级为原始数据。
 - **双重重要性分级**：直接影响（红色）vs 战略观察（黄色），观察级不推钉钉主报告。
-- **Google News 密文解码**：在 `SourcingEngine` 及 `resolve_news_url` 中置入本地 Base64-Protobuf 解码器，自动解析 `news.google.com/rss/articles/` 中的原始真实链接，彻底避免 400 Bad Request 错误及网络请求延迟。
+- **Google News 密文解码与 URL 防护**：在 `SourcingEngine` 及 `resolve_news_url` 中置入本地 Base64-Protobuf 解码器，并配置 `_is_valid_news_url` 过滤规则。禁止将流量统计、社交分享、广告追踪等非新闻域名（如 `google-analytics.com`、`googletagmanager.com`）及 `.js`/`.css` 等静态资产提取为新闻直链。
 - **持久化去重记忆库 (Persistent Cache)**：在 `logs/processed_urls.json` 中记录过去 14 天内已处理的文章链接 (URL)，SourcingEngine 在初始化时自动加载并清理过期记录，在抓取解析的 loop 中第一时间拦截已存在链接，防止重复数据进入大模型。新 URL 会在汇总后增量写入文件。
 - **LLM 时间校验铁律 (Prompt Reinforcement)**：大模型 System Prompt 强制注入系统时间 `今天是 {current_date}。` 并增加绝对阻断指令：任何早于限制时间（每日模式 48 小时，周报/实践模式 7 天）的事件直接判定为失效情报（is_valid_risk/is_valid_practice 设为 false）进行拦截过滤。
 

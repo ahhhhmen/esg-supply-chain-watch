@@ -18,7 +18,7 @@ logger = logging.getLogger("esg_agent")
 
 
 _HTTP_URL_RE = re.compile(r"https?://[^\s\"'<>\\]+", re.I)
-_GOOGLE_HOST_RE = re.compile(r"(^|\.)(google|gstatic|googleusercontent|youtube|ytimg|google-analytics|googletagmanager)\.", re.I)
+_GOOGLE_HOST_RE = re.compile(r"(^|\.)(google|gstatic|googleapis|googleusercontent|youtube|ytimg|google-analytics|googletagmanager)\.", re.I)
 
 
 def _is_google_url(url: str) -> bool:
@@ -111,6 +111,18 @@ def _extract_original_from_html(html_text: str) -> str:
 def resolve_news_url(url: str, timeout: int = 5) -> str:
     if not url or "news.google.com" not in url:
         return url
+
+    # 1. 优先尝试使用 googlenewsdecoder 包进行解码
+    try:
+        from googlenewsdecoder import GoogleDecoder
+        decoder = GoogleDecoder()
+        res = decoder.decode_google_news_url(url)
+        if res.get("status") and res.get("decoded_url"):
+            decoded_url = res["decoded_url"]
+            if decoded_url.startswith("http") and _is_valid_news_url(decoded_url):
+                return decoded_url
+    except Exception as e:
+        logger.debug(f"googlenewsdecoder failed: {e}")
 
     if "news.google.com/rss/articles/" in url:
         import base64

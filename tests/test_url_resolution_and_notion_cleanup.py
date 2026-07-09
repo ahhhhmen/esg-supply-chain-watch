@@ -380,3 +380,17 @@ def test_attach_source_urls_fills_missing_event_links():
     ESGIntelligenceAgent._attach_source_urls(event, [])
     assert event["sources"][0]["url"] == "https://reuters.com/article"
     assert event["sources"][1]["url"] == "https://bloomberg.com/story"
+
+
+def test_resolve_news_url_with_googlenewsdecoder():
+    # Test resolving a real/mocked Google News URL with the new encoder using googlenewsdecoder
+    google_url = "https://news.google.com/rss/articles/CBMilgFBVV95cUxOTHpMdGRuQUlyUEctYml3aE5ST0wxMUxlMkIwSmlvTnhSNkRPb2dzNHFpNllFMk5ZbVlpTi0yUU9RZFhEZWs5dTNTY3BLaTBHSG56S3NfbUZZdVRiNXFFQW56NjVjMXJNSWVHSF9UWHkwVm1iUzh4ck1hTEtubTJKbUZ2cWVWZjVxSFlVZXNaTkl4TF9iOFE?oc=5"
+    expected = "https://www.business-humanrights.org/en/from-us/briefings/transition-minerals-tracker-2026/"
+    assert resolve_news_url(google_url) == expected
+
+
+def test_resolve_news_url_filters_googleapis_and_css():
+    # Verify that fonts.googleapis.com URL or similar stylesheets are NOT returned as valid news URLs
+    invalid_url = "https://fonts.googleapis.com/css?family=Google+Sans+Text"
+    from esg_agent.fetchers import _is_valid_news_url
+    assert not _is_valid_news_url(invalid_url)

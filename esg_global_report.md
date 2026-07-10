@@ -1,9 +1,9 @@
-# 🏛️ ESG 全球地缘与合规周报 (Weekly Strategy Insight)
+# 🏛️ ESG 全球供应链动态日报 (Daily Intelligence)
 
-> 🔮【宏观合规战略】全球地缘与准入壁垒周报
-> 📅 **生成时间**: 2026-07-09 23:21:15
-> 📊 **主层情报**: 1 条 · 📡 战略观察 1 条 | 涉及企业: 1 家
-> 📆 **覆盖时段**: 2026-07-02 ~ 2026-07-09
+> 全球供应链合规与风险速递
+> 📅 **生成时间**: 2026-07-10 23:07:06
+> 📊 **主层情报**: 1 条 · 📡 战略观察 1 条 | 涉及企业: 2 家
+> 📆 **覆盖时段**: 2026-07-10 ~ 2026-07-10
 
 ---
 
@@ -17,11 +17,11 @@
 ## 【合规与运营危机】
 > 劳工罢工、重大安全事故、产品召回、严重环保罚单引发的即期运营阻断
 
-**大众汽车 | IG Metall警告大众汽车面临严重社会冲突**
+**大众汽车 | 大众汽车宣布大幅削减成本，可能关闭工厂**
 
-💡 高管洞察：IG Metall工会警告大众汽车可能爆发严重社会冲突，因公司计划关闭工厂和裁员。劳资紧张可能干扰大众德国工厂生产，华友钴业该事件需纳入观察其对电池材料订单的潜在影响。
+💡 高管洞察：大众汽车计划大幅削减成本并可能关闭工厂，反映其电动化转型压力。华友钴业作为大众电池材料供应商，该事件需纳入观察大众减产对前驱体订单的潜在影响，但当前尚未传导至具体采购调整。
 
-📅 2026-07-09 | 📰 信息源聚合：[Yahoo Finance France (法语)](https://fr.finance.yahoo.com/video/volkswagen-risque-grave-conflit-social-180228463.html), [epochtimes.fr (法语)](https://www.epochtimes.fr/manifestations-chez-volkswagen-apres-lannonce-de-fermetures-dusines-et-de-suppressions-demplois-massives-3303311.html)
+📅 2026-07-10 | 📰 信息源聚合：[dw.com (法语)](https://www.dw.com/fr/vw-vers-des-fermetures-dusines-et-des-licenciements/a-77910286), [Telset.id (法语)](https://telset.id/autonext/volkswagen-pangkas-model-hingga-50-phk-100-000-karyawan-mengintai)
 
 ---
 
@@ -32,9 +32,9 @@
 > 以下事件已确认为真实 ESG 风险，但当前传导链尚未触及上游电池材料端。
 > 列入观察清单，供战略团队追踪研判。如风险升级，系统将自动纳入主层。
 
-⚪ **大众汽车 | 大众汽车工会向CEO下达最后通牒，反对关闭工厂**
-> 🏷️ 合规与运营危机 | 📅 2026-07-09 | 📰 [新浪财经](https://wap.cj.sina.cn/7x24/4979652) · [7sur7.be](https://www.7sur7.be/economie/le-plan-de-volkswagen-risque-de-provoquer-un-conflit-social-majeur~a69a97bb/275741480)
-> 💡 大众汽车工会向CEO下达最后通牒，反对关闭工厂，反映整车端成本压力和劳资摩擦。当前公开信息未确认电动车或电池材料订单削减，暂列战略观察而非直接材料冲击。
+⚪ **福特汽车 | 福特汽车寻求拟议关税豁免**
+> 🏷️ 市场准入预警 | 📅 2026-07-10 | 📰 [Supply Chain Dive](https://www.supplychaindive.com/news/tariff-exemptions-ford-nestle-and-others-seek-relief-from-proposed-levies/824836)
+> 💡 福特汽车寻求关税豁免，反映贸易政策不确定性。华友钴业作为福特供应链上游材料商，该事件需纳入观察美国关税政策对福特电动车成本及采购策略的间接影响，但当前事件未直接涉及材料端。
 
 ---
 
@@ -43,4 +43,4 @@
 
 ---
 
-💰 Token 消耗: in=10,431 out=2,963 total=13,394 cost=$0.0023
+💰 Token 消耗: in=9,705 out=2,192 total=11,897 cost=$0.0020

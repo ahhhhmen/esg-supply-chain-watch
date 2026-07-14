@@ -65,6 +65,9 @@ intelligence_tracks:
     - lang: "fr-FR"
       lang_label: "Français"
       url_template: "https://news.google.com/rss/search?q={query}&hl=fr&gl=FR&ceid=FR:fr"
+    - lang: "ru"
+      lang_label: "Русский"
+      url_template: "https://news.google.com/rss/search?q={query}&hl=ru&gl=RU&ceid=RU:ru"
 
   # ── 轨道 2：定向高风险机构预警 ─────────────────────────
   # 针对特定企业在商业与人权资源中心 (BHRRC) 的黑历史记录
@@ -90,8 +93,9 @@ topics:
       keywords:
         zh-CN: ["罢工", "劳工权益", "劳动争议", "抗议", "工会", "强迫劳动", "劳资纠纷"]
         en-US: ["strike", "labor rights", "worker protest", "union dispute", "forced labor", "wage dispute", "collective bargaining"]
-        id-ID: ["mogok kerja", "hak buruh", "unjuk rasa", "serikat pekerja", "sengketa tenaga kerja", "kerja paksa"]
+        id-ID: ["mogok kerja", "hak buruh", "unjuk rasa", "serikat pekerja", "sengketa tenaga kerja", "kerja paksa", "jam kerja panjang", "keselamatan kerja", "kesehatan kerja", "mati mendadak", "bunuh diri"]
         fr-FR: ["grève", "droits des travailleurs", "syndicat", "manifestation", "travail forcé", "conflit social"]
+        ru: ["забастовка", "права трудящихся", "протест", "профсоюз", "принудительный труд", "трудовой спор", "длинный рабочий день", "несчастный случай", "внезапная смерть", "самоубийство"]
 
     - category: "环境污染与安全事故"
       keywords:
@@ -99,6 +103,7 @@ topics:
         en-US: ["pollution", "spill", "environmental accident", "toxic waste", "tailings", "explosion", "safety incident", "EPA fine", "hazardous material"]
         id-ID: ["polusi", "tumpahan", "kecelakaan lingkungan", "limbah beracun", "ledakan", "kecelakaan kerja", "bahan berbahaya"]
         fr-FR: ["pollution", "déversement", "accident environnemental", "déchets toxiques", "explosion", "sécurité au travail", "substance dangereuse"]
+        ru: ["загрязнение", "утечка", "экологическая авария", "токсичные отходы", "хвостохранилище", "взрыв", "производственная травма", "экологический штраф", "опасные вещества"]
 
     - category: "社区冲突与土地纠纷"
       keywords:
@@ -106,6 +111,7 @@ topics:
         en-US: ["community protest", "land dispute", "resettlement", "indigenous rights", "compensation", "local opposition"]
         id-ID: ["protes masyarakat", "sengketa tanah", "penggusuran", "hak adat", "kompensasi"]
         fr-FR: ["protestation communautaire", "conflit foncier", "expulsion", "droits autochtones", "compensation"]
+        ru: ["протест общины", "земельный спор", "переселение", "права коренных народов", "компенсация", "протест местных жителей"]
 
   # ── 周报主题 (Weekly)：三大地缘合规维度 ──────────────
   weekly:
@@ -115,6 +121,7 @@ topics:
         en-US: ["EU Battery Regulation", "Battery Passport", "Critical Raw Materials Act", "CRMA", "CSRD", "CSDDD", "CBAM", "supply chain due diligence", "EU Battery Directive"]
         id-ID: ["Regulasi Baterai UE", "Paspor Baterai", "CRMA", "CSRD", "CBAM", "uji tuntas rantai pasok", "Uni Eropa baterai"]
         fr-FR: ["Règlement Batterie UE", "Passeport Batterie", "CRMA", "CSRD", "CSDDD", "CBAM", "devoir de vigilance", "code minier", "directive batteries"]
+        ru: ["Регулирование батарей ЕС", "Паспорт батареи", "Закон о критическом сырье", "CRMA", "CSRD", "CSDDD", "CBAM", "комплексная проверка"]
 
     - category: "美国地缘封锁"
       keywords:
@@ -122,6 +129,7 @@ topics:
         en-US: ["Inflation Reduction Act", "FEOC", "Foreign Entity of Concern", "UFLPA", "entity list", "export control", "IRA tax credit", "BIS"]
         id-ID: ["Inflation Reduction Act", "FEOC", "Undang-Undang Pengurangan Inflasi", "daftar entitas", "kontrol ekspor"]
         fr-FR: ["Inflation Reduction Act", "FEOC", "entité étrangère préoccupante", "liste d'entités", "contrôle des exportations", "restrictions commerciales"]
+        ru: ["Закон о снижении инфляции", "IRA", "FEOC", "чувствительный иностранный субъект", "UFLPA", "список организаций", "экспортный контроль"]
 
     - category: "资源国民族主义"
       keywords:
@@ -129,6 +137,7 @@ topics:
         en-US: ["downstreaming", "raw ore export ban", "Hilirisasi", "local processing mandate", "resource nationalism", "mining sovereignty", "mineral export ban"]
         id-ID: ["hilirisasi", "larangan ekspor bijih mentah", "nasionalisme sumber daya", "kedaulatan mineral", "pengolahan lokal"]
         fr-FR: ["transformation locale", "interdiction d'exportation de minerai brut", "nationalisme des ressources", "souveraineté minière", "code minier", "minerai brut"]
+        ru: ["локализация переработки", "запрет на экспорт сырой руды", "ресурсный национализм", "суверенитет над полезными ископаемыми"]
 
 # 4. 系统运行控制参数
 days_limit: 7
@@ -192,6 +201,7 @@ practice_topics:
       en-US: ["carbon neutral", "decarbonization", "net zero", "green manufacturing", "renewable energy", "clean production", "carbon reduction"]
       id-ID: ["netral karbon", "dekarbonisasi", "energi terbarukan", "nol emisi", "produksi bersih"]
       fr-FR: ["neutre en carbone", "décarbonation", "énergie renouvelable", "net zéro", "production propre"]
+      ru: ["углеродная нейтральность", "декарбонизация", "чистое производство", "зеленое производство"]
 
   - category: "供应链尽职调查与合规标杆"
     keywords:
@@ -199,6 +209,7 @@ practice_topics:
       en-US: ["responsible sourcing", "due diligence", "conflict minerals", "supply chain transparency", "responsible mining", "RMI", "RBA"]
       id-ID: ["sumber bertanggung jawab", "uji tuntas", " transparansi rantai pasok", "mineral konflik"]
       fr-FR: ["approvisionnement responsable", "devoir de vigilance", "minéraux de conflit", "transparence chaîne d'approvisionnement"]
+      ru: ["ответственный сорсинг", "комплексная проверка", "прозрачность цепочки поставок"]
 
   - category: "循环经济与回收"
     keywords:
@@ -206,6 +217,7 @@ practice_topics:
       en-US: ["battery recycling", "closed loop", "circular economy", "second life battery", "recycled material", "material recovery"]
       id-ID: ["daur ulang baterai", "ekonomi sirkular", "loop tertutup", "bahan daur ulang"]
       fr-FR: ["recyclage batterie", "économie circulaire", "boucle fermée", "seconde vie", "matière recyclée"]
+      ru: ["утилизация батарей", "циклическая экономика", "переработанный материал"]
 
   - category: "ESG披露与治理"
     keywords:
@@ -213,6 +225,7 @@ practice_topics:
       en-US: ["ESG report", "sustainability report", "CDP A list", "MSCI rating upgrade", "governance best practice", "responsible investment"]
       id-ID: ["laporan ESG", "laporan keberlanjutan", "CDP", "rating MSCI", "praktik tata kelola"]
       fr-FR: ["rapport ESG", "rapport durabilité", "CDP", "notation MSCI", "bonne pratique de gouvernance"]
+      ru: ["отчет ESG", "отчет об устойчивом развитии", "рейтинг MSCI"]
 
   - category: "技术创新与工艺升级"
     keywords:
@@ -220,3 +233,4 @@ practice_topics:
       en-US: ["cobalt free battery", "solid state battery", "sodium ion battery", "innovation", "technology breakthrough", "new material", "R&D"]
       id-ID: ["baterai tanpa kobalt", "baterai solid state", "baterai natrium", "inovasi", "terobosan teknologi"]
       fr-FR: ["batterie sans cobalt", "batterie solide", "batterie sodium", "innovation", "percée technologique", "nouveau matériau"]
+      ru: ["безкобальтовая батарея", "твердотельный аккумулятор", "инновация", "технологический прорыв"]

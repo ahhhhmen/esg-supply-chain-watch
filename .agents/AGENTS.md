@@ -20,7 +20,7 @@ This document defines the core domain rules and logic constraints for this speci
 - esg_agent/ 包（8 模块）：config、fetchers、filters、deduplication、reporters、scorer、validators、llm_client、canonical、pdf_writer。
 
 ## 3. Domain Logic & Data Filters
-- **4 语言 4 地理轨**：zh-CN、en-US、id-ID、fr-FR，各使用本地化 Google News 参数。
+- **5 语言 5 地理轨**：zh-CN、en-US、id-ID、fr-FR、ru，各使用本地化 Google News 参数。此外，印尼语 (id-ID) 日常劳工轨增补了关于长工时、猝死及自杀等职业安全与健康的负面词库。
 - **三层采集**：静态 RSS + 动态查询矩阵 + AI 发现查询（Phase 0.5）。
 - **实体过滤器**：正则匹配 12 家目标公司名（支持 CJK），垃圾/赌博关键词黑名单。
 - **去重**：Jaccard 词级相似度（阈值 0.45）+ LLM 跨批次语义收敛。
@@ -28,12 +28,13 @@ This document defines the core domain rules and logic constraints for this speci
 - **Fail-closed 设计**：LLM JSON 提取失败的批次整体丢弃，不降级为原始数据。
 - **双重重要性分级**：直接影响（红色）vs 战略观察（黄色），观察级不推钉钉主报告。
 - **Google News 密文解码与 URL 防护**：在 `SourcingEngine` 及 `resolve_news_url` 中，优先使用 `googlenewsdecoder` 作为首选解码机制，并配置 `_is_valid_news_url` 过滤规则。禁止将流量统计、社交分享、广告追踪及 Google 静态接口等非新闻域名（如 `google-analytics.com`、`googletagmanager.com`、`fonts.googleapis.com`）及 `.js`/`.css` 等静态资产提取为新闻直链。
+- **人权与高防网站抗爬回退机制**：针对 BHRRC (`business-humanrights.org`) 和 Evidencity (`evidencity.com`) 等设有强力 Cloudflare 盾的站点，如果常规 `extract_article_body` 抓取返回 403 / 失败，系统自动回退请求 `https://r.jina.ai/<URL>` 获取干净的正文 Markdown，并剥离 Jina 注入的 metadata 头部，只截取 `max_length` 长度，保证大模型能够获得稳定的正文摘要。
 - **持久化去重记忆库 (Persistent Cache)**：在 `logs/processed_urls.json` 中记录过去 14 天内已处理的文章链接 (URL)，SourcingEngine 在初始化时自动加载并清理过期记录，在抓取解析的 loop 中第一时间拦截已存在链接，防止重复数据进入大模型。新 URL 会在汇总后增量写入文件。
 - **LLM 时间校验铁律 (Prompt Reinforcement)**：大模型 System Prompt 强制注入系统时间 `今天是 {current_date}。` 并增加绝对阻断指令：任何早于限制时间（每日模式 48 小时，周报/实践模式 7 天）的事件直接判定为失效情报（is_valid_risk/is_valid_practice 设为 false）进行拦截过滤。
 
 
 ## 4. Configuration & Sources
-- `config.yaml`（222 行）：12 家公司、4 地理轨、多语言风险主题关键词、排除模式。
+- `config.yaml`：12 家公司、5 地理轨、多语言风险主题与良好实践关键词、排除模式。
 - `esg_sources.yaml`：5 条静态雷达查询（BYD 欧洲、华友非洲、BHRRC、紫金全球、美国海关 WRO）。
 - Google News RSS 为主采集渠道，BHRRC 和 EFRAG 为专项轨。
 - `days_limit: 7`，每公司上限 20 条。
@@ -59,11 +60,11 @@ This document defines the core domain rules and logic constraints for this speci
 
 ## 7. Long-Term Agent Memory
 - 对话中的关键共识不会自动写入仓库文件；需要长期保留的规则、业务判断、Prompt 约束和工作流约定，必须由用户明确要求后沉淀到本文件。
-- 本文件是长期记忆的单一事实源；`CLAUDE.md`、`.cursorrules`、`.windsurfrules`、`.github/copilot-instructions.md` 均应通过软链接或同步内容指向本文件，避免多处规则漂移。
+- 本文件是长期记忆的单一事实源；`AGENTS.md`、`.cursorrules`、`.windsurfrules`、`.github/copilot-instructions.md` 均应通过软链接或同步内容指向本文件，避免多处规则漂移。
 - 新增长期记忆时，只记录稳定、可复用、会影响未来实现或判断的规则；不要记录一次性任务过程、临时日志、敏感密钥、个人隐私或尚未确认的猜测。
 - 修改长期记忆时，应优先追加到最相关章节；若规则会改变既有行为，必须明确写出新规则的适用范围，避免覆盖原有业务红线。
 - 当前已确认的 Prompt 质量规则：`esg_intelligence_agent.py` 中主风险分析与良好实践分析的 System Prompt 必须包含语言质量硬约束，要求输出文本符合资深商业顾问行文规范，并在输出前进行自我语病审查，确保语言精炼、专业、流畅，禁止词句重复或语法结构杂糅。
 
 ---
 
-<!-- This file is the single source of truth. .cursorrules, .windsurfrules, .github/copilot-instructions.md, and CLAUDE.md all symlink here. -->
+<!-- This file is the single source of truth. .cursorrules, .windsurfrules, .github/copilot-instructions.md, and AGENTS.md all symlink here. -->

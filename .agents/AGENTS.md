@@ -31,6 +31,7 @@ This document defines the core domain rules and logic constraints for this speci
 - **人权与高防网站抗爬回退机制**：针对 BHRRC (`business-humanrights.org`) 和 Evidencity (`evidencity.com`) 等设有强力 Cloudflare 盾的站点，如果常规 `extract_article_body` 抓取返回 403 / 失败，系统自动回退请求 `https://r.jina.ai/<URL>` 获取干净的正文 Markdown，并剥离 Jina 注入的 metadata 头部，只截取 `max_length` 长度，保证大模型能够获得稳定的正文摘要。
 - **持久化去重记忆库 (Persistent Cache)**：在 `logs/processed_urls.json` 中记录过去 14 天内已处理的文章链接 (URL)，SourcingEngine 在初始化时自动加载并清理过期记录，在抓取解析的 loop 中第一时间拦截已存在链接，防止重复数据进入大模型。新 URL 会在汇总后增量写入文件。
 - **LLM 时间校验铁律 (Prompt Reinforcement)**：大模型 System Prompt 强制注入系统时间 `今天是 {current_date}。` 并增加绝对阻断指令：任何早于限制时间（每日模式 48 小时，周报/实践模式 7 天）的事件直接判定为失效情报（is_valid_risk/is_valid_practice 设为 false）进行拦截过滤。
+- **主机厂非核心事故与实体错误过滤 (Chemical & Scope Filters)**：对于发生在非监控车企自身主体（如航空航天或非核心零部件供应商 GKN 等）的化学品/环保安全事故，即使标题中包含车企关键词或标签，LLM 必须判定 `is_valid_risk = false` 降噪拦截；同时，主机厂常规厂区发生的普通化学品泄漏、常规环保/安全事故或非电池核心零部件污染，对上游电池材料没有直接的供应链穿透冲击，必须判定 `is_direct_material_impact = false`（作为黄色“战略观察”处理，不推钉钉主报告），且其 `executive_insight` 强制套用硬性模板：`"该事件属于车企终端运营/技术故障，当前链条未传导至上游材料端。"`
 
 
 ## 4. Configuration & Sources

@@ -257,10 +257,10 @@ class ESGIntelligenceAgent:
    - 【灰色地带判例】若不确定，倾向于判定为 true 并让下游 Python 管道做最终裁决。
 3. 严格分类 (risk_category) 与负面清单：
    - "早期合规预警"：属地政府/警方正式发起的环保调查、劳工合规审查、毒地/毒土处理 Probe、安全监察等尚未引发停产但已进入正式调查程序的早期合规阻力。此类别仅适用于调查/Probe/Investigation 性质的新闻，不适用于 NGO 指控或媒体质疑。
-   - "供应链断裂预警"：仅限物理层面的供给中断（工厂因灾停产、矿端断供、核心供应商破产、物流瘫痪）。【负面清单】以下内容绝对不属于本类，必须归入 is_valid_risk=false 并直接丢弃：投资/股价波动、财报亏损、M&A/股权转让、需求疲软/销量下滑、新产品发布、技术合作、融资/增资。遇到这些话题时 risk_category 填入"无关噪音"且 is_valid_risk=false。
+   - "供应链断裂预警"：包含物理层面的供给中断（工厂因灾停产、矿端断供、核心供应商破产、物流瘫痪），以及【因辅料价格暴涨、辅料断供、设备高负荷检修引发的 30% 以上重大物理停产/产能扣减】。【负面清单】以下内容绝对不属于本类，必须归入 is_valid_risk=false 并直接丢弃：常规投资/股价波动、财报亏损、M&A/股权转让、需求疲软/销量下滑、新产品发布、技术合作、融资/增资。遇到这些话题时 risk_category 填入"无关噪音"且 is_valid_risk=false。
    - "市场准入预警"：仅限进出口禁令、关税惩罚、实体清单、强迫劳动货物扣留。【负面清单】绝对排除产品召回、质量事故、软件故障——这些归入"合规与运营危机"。
-   - "合规与运营危机"：包含劳工罢工/抗议、重大安全事故（爆炸/矿难）、产品召回、车辆起火、软件安全缺陷、严重环保罚单。
-   - "机构与声誉预警"：NGO指控、人权机构质询、评级下调等尚未演变为实质停产的高声誉风险事件。
+   - "合规与运营危机"：包含劳工罢工/抗议、重大安全事故（尾矿坝溃坝/爆炸/矿难）、产品召回、车辆起火、软件安全缺陷、严重环保罚单。
+   - "机构与声誉预警"：NGO指控（如CRI、BHRRC报告）、人权机构质询、评级下调、主流媒体深度复盘曝光过往未化解的重大隐患等高声誉与合规追责风险事件。
 
 4. 材料冲击判定 (is_direct_material_impact) — 绝对红线：
    你必须对每条 is_valid_risk=true 的事件额外输出布尔值字段 is_direct_material_impact，判定该事件是否对上游电池材料（前驱体/正极材料/镍钴锂资源）存在直接的供应链、订单或合规穿透冲击。
@@ -276,9 +276,9 @@ class ESGIntelligenceAgent:
    【必须判定为 true 的触发条件】：
    · 动力电池（高压电池包/电芯/模组）起火、召回、停产。
    · 正极材料/前驱体/电解液/隔膜等上游材料的质量缺陷被公开披露。
-   · 镍/钴/锂矿端停产、禁运、出口管制、矿山事故。
-   · 电池工厂（Gigafactory）爆炸、火灾、罢工导致停工。
-   · 欧盟/美国针对电池材料的反倾销税、强迫劳动禁令、碳足迹准入门槛。
+   · 镍/钴/锂矿端停产、禁运、出口管制、矿山事故、尾矿坝溃坝/泄漏。
+   · 电池工厂（Gigafactory）爆炸、火灾、罢工、重大停产检修导致停工。
+   · 欧盟/美国针对电池材料的反倾销税、强迫劳动禁令、碳足迹准入门槛、NGO针对重大项目的追责报告。
    
    【灰度条款 — 官方声明未出前默认 false】：
    · 若事件属于「电动汽车起火但起火原因未公布」，在无官方（NHTSA/车企/消防部门）明确声明指向动力电池前 → 默认 false。
@@ -289,8 +289,10 @@ class ESGIntelligenceAgent:
    "该事件属于车企终端运营/技术故障，当前链条未传导至上游材料端。"
    严禁在 is_direct_material_impact=false 的情况下生搬硬套任何「订单波动」「供应链不确定性」「材料需求变化」等废话。
 
-5. 时间时效过滤（绝对阻断指令）：
-   你必须严格审查每条新闻的发生日期。如果该事件发生时间早于{limit_str}，你必须判定它为失效情报，直接忽略（即在 JSON 输出中将 is_valid_risk 设置为 false，且 risk_category 设置为 "无关噪音"），绝不能将其输出到最终的战略观察或风险清单中。
+5. 时间时效过滤（时效与二次曝光双重审查规则）：
+   你必须严格审查每条新闻的发生及发布日期。
+   - 【普通新闻】：若该事件发生时间早于 {limit_str}，你必须判定它为失效情报，直接忽略（is_valid_risk = false，risk_category = "无关噪音"）。
+   - 【例外条款（深度曝光与追责升级）】：如果新闻在最近 7 天内刚被主流媒体（如腾讯、钛媒体、FT、WSJ）或权威 NGO（如 CRI、BHRRC）首次/最新【深度曝光、调查复盘、追责升级】，即使底层原始事故发生时间较早（如上年度或半年前发生），鉴于其构成了最新的声誉与合规追责风险，你必须判定其 is_valid_risk = true，risk_category 设为 "机构与声誉预警" 或 "合规与运营危机"，且在 display_title_zh 中明确注明【历史隐患深度复盘/追责】。
 
 # Executive Insight 生成规则（严格执行 — 华友钴业中心制）
 1. 身份锚定：华友钴业是全球领先的新能源锂电上游材料供应商，主营前驱体（Precursor）与正极材料（Cathode Active Material），核心下游客户包括特斯拉、宝马、奔驰、大众等全球主机厂及电池制造商。所有 insight 必须从华友钴业的产业位置出发进行传导推演。
@@ -2609,6 +2611,16 @@ Output only valid JSON array, no markdown."""
             logger.info(f"Phase 2.4 spam filter: {pre_spam} -> {len(self.articles)} ({spam_count} spam)")
 
         # ── Phase 2.5: Entity Presence Filter ───────────
+        company_aliases_map: dict[str, list[str]] = {}
+        all_comps = self.config.companies + self.config.practice_companies
+        for c in all_comps:
+            aliases = c.get("aliases", [])
+            if aliases:
+                if c.get("name_zh"):
+                    company_aliases_map[c.get("name_zh")] = aliases
+                if c.get("name_en"):
+                    company_aliases_map[c.get("name_en")] = aliases
+
         pre_filter_count = len(self.articles)
         filtered_articles: list[NewsArticle] = []
         for article in self.articles:
@@ -2617,10 +2629,12 @@ Output only valid JSON array, no markdown."""
             # 轨道 3（宏观政策）无企业名时直接保留
             if not zh and not en:
                 filtered_articles.append(article)
-            elif EntityFilter.passes(article, zh, en):
-                filtered_articles.append(article)
             else:
-                logger.info(f"[过滤] 未包含实体: {article.title}")
+                aliases = company_aliases_map.get(zh) or company_aliases_map.get(en)
+                if EntityFilter.passes(article, zh, en, aliases=aliases):
+                    filtered_articles.append(article)
+                else:
+                    logger.info(f"[过滤] 未包含实体: {article.title}")
         self.articles = filtered_articles
         logger.info(f"Phase 2.5 entity filter: {pre_filter_count} -> {len(self.articles)}")
 

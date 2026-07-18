@@ -14,6 +14,7 @@ class CompanyConfig(BaseModel):
     name_zh: str
     name_en: str
     ticker: str = ""
+    aliases: list[str] = Field(default_factory=list)
 
 
 class GeographicalTrack(BaseModel):

@@ -34,3 +34,17 @@ esg_sources:
     query: '("Withhold Release Order" OR "CBP" OR "UFLPA") AND ("copper" OR "cobalt" OR "lithium" OR "battery" OR "solar")'
     time_window: "24h"
     enabled: true
+
+  # 轨道6：印尼 HPAL 湿法尾矿坝与园区安全重点监控
+  - id: "radar_indonesia_nickel_hpal"
+    type: "google_news_rss"
+    query: '("Huayue" OR "Huafei" OR "IWIP" OR "IMIP") AND ("tailings" OR "collapse" OR "spill" OR "dam" OR "maintenance" OR "coal plant" OR "indigenous")'
+    time_window: "7d"
+    enabled: true
+
+  # 轨道7：Climate Rights International (CRI) 专项人权与气候合规预警
+  - id: "target_cri_reports"
+    type: "google_news_rss"
+    query: '("Climate Rights International" OR "site:cri.org") AND ("Indonesia" OR "nickel" OR "Weda Bay" OR "Morowali")'
+    time_window: "7d"
+    enabled: true

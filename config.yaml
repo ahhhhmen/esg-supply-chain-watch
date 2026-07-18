@@ -9,6 +9,7 @@ companies:
   - name_zh: "华友钴业"
     name_en: "Huayou Cobalt"
     ticker: "603799.SS"
+    aliases: ["华越", "华飞", "华科", "PT Huayue", "PT Huafei", "PT Huake", "IWIP", "IMIP", "Weda Bay", "Morowali"]
   - name_zh: "赣锋锂业"
     name_en: "Ganfeng Lithium"
     ticker: "002460.SZ"
@@ -18,6 +19,7 @@ companies:
   - name_zh: "格林美"
     name_en: "GEM"
     ticker: "002340.SZ"
+    aliases: ["青美邦", "PT QMB"]
   - name_zh: "洛阳钼业"
     name_en: "CMOC"
     ticker: "603993.SS"
@@ -26,6 +28,7 @@ companies:
   - name_zh: "青山控股"
     name_en: "Tsingshan Holding"
     ticker: "PRIVATE"
+    aliases: ["永青", "Eternal Tsingshan", "IMIP", "IWIP"]
 
   # === 新增：下游主要主机厂客户 ===
   - name_zh: "特斯拉"
@@ -101,7 +104,7 @@ topics:
       keywords:
         zh-CN: ["污染", "泄漏", "环境事故", "废水", "尾矿", "爆炸", "安全事故", "环保处罚", "有毒物质"]
         en-US: ["pollution", "spill", "environmental accident", "toxic waste", "tailings", "explosion", "safety incident", "EPA fine", "hazardous material"]
-        id-ID: ["polusi", "tumpahan", "kecelakaan lingkungan", "limbah beracun", "ledakan", "kecelakaan kerja", "bahan berbahaya"]
+        id-ID: ["polusi", "tumpahan", "kecelakaan lingkungan", "limbah beracun", "ledakan", "kecelakaan kerja", "bahan berbahaya", "bendungan ekor", "tanggul jebol", "limbah HPAL", "longsor"]
         fr-FR: ["pollution", "déversement", "accident environnemental", "déchets toxiques", "explosion", "sécurité au travail", "substance dangereuse"]
         ru: ["загрязнение", "утечка", "экологическая авария", "токсичные отходы", "хвостохранилище", "взрыв", "производственная травма", "экологический штраф", "опасные вещества"]
 
@@ -112,6 +115,14 @@ topics:
         id-ID: ["protes masyarakat", "sengketa tanah", "penggusuran", "hak adat", "kompensasi"]
         fr-FR: ["protestation communautaire", "conflit foncier", "expulsion", "droits autochtones", "compensation"]
         ru: ["протест общины", "земельный спор", "переселение", "права коренных народов", "компенсация", "протест местных жителей"]
+
+    - category: "供应链与运营中断"
+      keywords:
+        zh-CN: ["停产检修", "产能扣减", "辅料短缺", "硫磺", "减产", "产线检修", "原料暴涨", "物理停产"]
+        en-US: ["plant maintenance", "capacity reduction", "auxiliary shortage", "curtailment", "production halt", "shutdown", "supply disruption"]
+        id-ID: ["pemeliharaan pabrik", "pengurangan kapasitas", "penutupan sementara", "kekurangan bahan baku", "hentikan produksi"]
+        fr-FR: ["maintenance d'usine", "réduction de capacité", "arrêt de production", "penurie de matières premières"]
+        ru: ["ремонт завода", "сокращение мощностей", "остановка производства", "дефицит сырья"]
 
   # ── 周报主题 (Weekly)：三大地缘合规维度 ──────────────
   weekly:

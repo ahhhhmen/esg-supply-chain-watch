@@ -143,6 +143,29 @@ class AgentConfig:
         return kw.get(lang, []) or kw.get("en-US", [])
 
     @staticmethod
+    def _build_company_search_term(company: dict, lang: str) -> str:
+        is_cn = lang in _GEO_CN_LANGS
+        primary_name = company.get("name_zh" if is_cn else "name_en", "")
+        aliases = company.get("aliases", [])
+        if not aliases:
+            return f'"{primary_name}"' if primary_name else ""
+
+        valid_aliases = []
+        for alias in aliases:
+            has_cjk = any("\u4e00" <= char <= "\u9fff" for char in alias)
+            if is_cn and has_cjk:
+                valid_aliases.append(alias)
+            elif (not is_cn) and (not has_cjk):
+                valid_aliases.append(alias)
+
+        terms = ([primary_name] if primary_name else []) + valid_aliases
+        if len(terms) == 1:
+            return f'"{terms[0]}"'
+        elif len(terms) > 1:
+            return "(" + " OR ".join(f'"{t}"' for t in terms) + ")"
+        return ""
+
+    @staticmethod
     def _build_keyword_query(keywords: list[str]) -> str:
         """将关键词列表组装为 OR 查询片段，如: ("strike" OR "labor" OR ...)。"""
         if not keywords:
@@ -192,7 +215,7 @@ class AgentConfig:
                     lang_label = geo.get("lang_label", lang)
                     if not url_template:
                         continue
-                    search_term = name_zh if lang in _GEO_CN_LANGS else name_en
+                    search_term = self._build_company_search_term(company, lang)
                     if not search_term:
                         continue
                     for topic in active_topics:
@@ -202,7 +225,7 @@ class AgentConfig:
                             continue
                         kw_query = self._build_keyword_query(keywords)
                         excl = f" {self.query_exclusions_practice}" if self.query_exclusions_practice else ""
-                        full_query = f'"{search_term}" {kw_query} when:{self.days_limit}d{excl}'
+                        full_query = f'{search_term} {kw_query} when:{self.days_limit}d{excl}'
                         query_encoded = quote(full_query, safe='/-:()"')
                         final_url = url_template.replace("{query}", query_encoded)
                         items.append(QueryItem(
@@ -240,8 +263,8 @@ class AgentConfig:
                 if not url_template:
                     continue
 
-                # 选择对应语言的公司名
-                search_term = name_zh if lang in _GEO_CN_LANGS else name_en
+                # 选择对应语言的公司名与别名组合
+                search_term = self._build_company_search_term(company, lang)
                 if not search_term:
                     continue
 
@@ -253,9 +276,9 @@ class AgentConfig:
                         continue
 
                     kw_query = self._build_keyword_query(keywords)
-                    # 组装完整查询: "公司名" (关键词1 OR 关键词2 ...) when:Nd -股票 -产品
+                    # 组装完整查询: 搜索词表达式 (关键词1 OR 关键词2 ...) when:Nd -股票 -产品
                     excl = f" {self.query_exclusions_risk}" if self.query_exclusions_risk else ""
-                    full_query = f'"{search_term}" {kw_query} when:{self.days_limit}d{excl}'
+                    full_query = f'{search_term} {kw_query} when:{self.days_limit}d{excl}'
                     query_encoded = quote(full_query, safe='/-:()"')
                     final_url = url_template.replace("{query}", query_encoded)
 

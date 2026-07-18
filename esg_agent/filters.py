@@ -52,9 +52,15 @@ class EntityFilter:
         return False
 
     @classmethod
-    def passes(cls, article: "NewsArticle", name_zh: str, name_en: str) -> bool:
+    def passes(cls, article: "NewsArticle", name_zh: str, name_en: str, aliases: list[str] | None = None) -> bool:
         haystack = article.title + " " + article.raw_summary
-        return cls._match(name_zh, haystack) or cls._match(name_en, haystack)
+        if cls._match(name_zh, haystack) or cls._match(name_en, haystack):
+            return True
+        if aliases:
+            for alias in aliases:
+                if cls._match(alias, haystack):
+                    return True
+        return False
 
     # ── 内部方法 ──────────────────────────────────────────────
 
@@ -77,9 +83,9 @@ class EntityFilter:
             if is_cjk:
                 pattern = re.compile(escaped, re.IGNORECASE)
             elif is_strict:
-                pattern = re.compile(r"\b" + escaped + r"\b")
+                pattern = re.compile(r"(?<![a-zA-Z0-9])" + escaped + r"(?![a-zA-Z0-9])")
             else:
-                pattern = re.compile(r"\b" + escaped + r"\b", re.IGNORECASE)
+                pattern = re.compile(r"(?<![a-zA-Z0-9])" + escaped + r"(?![a-zA-Z0-9])", re.IGNORECASE)
             cls._PATTERN_CACHE[cache_key] = pattern
 
         return cls._PATTERN_CACHE[cache_key]

@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock
 
+import pytest
 import clean_notion
 import notion_upsert
 from esg_agent.canonical import (
@@ -418,6 +419,7 @@ def test_attach_source_urls_fills_missing_event_links():
 
 
 def test_resolve_news_url_with_googlenewsdecoder(monkeypatch):
+    pytest.importorskip("googlenewsdecoder")
     # Test resolving a Google News URL by mocking googlenewsdecoder to avoid network flakiness
     google_url = "https://news.google.com/rss/articles/CBMilgFBVV95cUxOTHpMdGRuQUlyUEctYml3aE5ST0wxMUxlMkIwSmlvTnhSNkRPb2dzNHFpNllFMk5ZbVlpTi0yUU9RZFhEZWs5dTNTY3BLaTBHSG56S3NfbUZZdVRiNXFFQW56NjVjMXJNSWVHSF9UWHkwVm1iUzh4ck1hTEtubTJKbUZ2cWVWZjVxSFlVZXNaTkl4TF9iOFE?oc=5"
     expected = "https://www.business-humanrights.org/en/from-us/briefings/transition-minerals-tracker-2026/"

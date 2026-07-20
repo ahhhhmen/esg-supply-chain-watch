@@ -365,8 +365,38 @@ class TestUrlPrefixMapping:
         assert resolved2["source_urls"][0] == full_url
 
 
+    def test_eu_batteries_regulation_deduplication(self):
+        events = [
+            _event(
+                entity="[🇪🇺 欧盟]",
+                core_event_title_en="EU Batteries Regulation Delegated Act on Recycled Content",
+                display_title_zh="欧盟电池与废电池法规（EU）2023/1542 授权法案质量平衡系统",
+                date="2026-08-01",
+                sources=[{"name": "ResourceMedia", "url": "https://resourcemedia.eco/art1"}],
+            ),
+            _event(
+                entity="欧盟委员会",
+                core_event_title_en="EU Batteries Regulation quality balance system",
+                display_title_zh="欧盟电池法规要求通过工厂级质量平衡证明回收含量",
+                date="2026-08-01",
+                sources=[{"name": "ResourceMedia", "url": "https://resourcemedia.eco/art2"}],
+            ),
+            _event(
+                entity="欧盟",
+                core_event_title_en="Regulation EU 2023/1542 recycled content targets",
+                display_title_zh="欧盟电池与废电池法规回收含量证明制度",
+                date="2024-02-18",
+                sources=[{"name": "ResourceMedia", "url": "https://resourcemedia.eco/art3"}],
+            ),
+        ]
+
+        merged = ESGIntelligenceAgent._dedupe_events_for_push(events)
+        assert len(merged) == 1
+        assert len(merged[0]["sources"]) == 3
+
+
 class TestWeeklyReportDingtalkStructure:
-    def test_weekly_review_isolated_from_dingtalk(self):
+    def test_weekly_review_included_in_dingtalk_push(self):
         events = [
             _event(
                 entity="华友钴业",
@@ -388,13 +418,14 @@ class TestWeeklyReportDingtalkStructure:
             weekly_review_text=review_text,
         )
         
-        # Check that directory and body do NOT contain weekly review or references to it
-        assert "- 🔍 **监控矩阵盲区分析**" not in content
-        assert "## 🔍 监控矩阵盲区分析" not in content
-        assert "巴西镍供应链" not in content
+        # Check that directory and body contain weekly review
+        assert "- 🔍 **监控矩阵盲区分析**" in content
+        assert "## 🔍 监控矩阵盲区分析" in content
+        assert "巴西镍供应链" in content
         
         # Check that strategic observations are still present
         assert "## 📡 战略观察清单" in content
+
 
 
 

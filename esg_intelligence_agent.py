@@ -316,6 +316,8 @@ class ESGIntelligenceAgent:
    · 如果美国国会/政府因"中国资本持股/中国供应链关联"而对欧洲车企（如梅赛德斯-奔驰、宝马等）发起审查或限制销售，其物理传导链条为："限制其在【美国本土】的销售，进而可能导致其全球电动车减产或迫使其供应链'去中国化'，从而间接冲击上游材料商（华友）的订单"。
    · 严禁直接推演为"影响该车企在华销量（在中国的销量）"。
    · 严禁因果倒置，必须严格区分【制裁发起国】、【受制裁主体市场】与【上游材料链】的真实传导方向。
+11. 【历史基线对照约束】：涉及政府公报、国际倡议（如 G7 声明）或国家税制法案时，历史基线对比必须基于真实的历史政策。绝对禁止将第三方 ESG 行业认证标准（如 IRMA/RMI 等）的文案错配到国际政治声明或政府关税税制上。若无确切历史对比，应如实说明系统暂未收录。
+12. 【官方寻源域名防错】：新闻媒体报道域名（如 `bjnews.com.cn`, `reuters.com`, `bloomberg.com`, `sina.com.cn` 等）绝对禁止识别为政府官方机构域名（如中国商务部官网 `mofcom.gov.cn`）。只有顶级政府/官方域名才可标为官方机构域名。
 
 # Output Format
 你必须仅输出合法的 JSON 数据，不得包含任何 Markdown 标记或额外解释。JSON 结构必须如下：
@@ -1426,7 +1428,6 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
             else:
                 source_str = str(sources_raw) if sources_raw else "Unknown"
             risk_cat = str(e.get("risk_category", "")).strip()
-            # v12: title 使用 display_title_zh
             title_val = str(
                 e.get("display_title_zh")
                 or e.get("core_event_title_en")
@@ -1441,131 +1442,193 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                 "tags": [risk_cat] if risk_cat else ["日常运营风险"],
                 "url": str(e.get("url", "")).strip(),
             })
-        # 返回：compatible 仅含主层（用于指标），second value 含两层（用于 Notion/DingTalk）
         return compatible, valid_events + watch_events
 
     @classmethod
-    def _generate_practice_report_and_filter(
-        cls, all_events: list[dict], mode: str, report_path: str = "esg_practice_report.md",
-    ) -> tuple[list[dict], list[dict]]:
-        """Practice 轨道确定性渲染：过滤 → 语义合并 → 分组 → 生成 Markdown 报告。
+    def _format_for_dingtalk(cls, valid_events: list[dict], mode: str, now_str: str, dmin: str, dmax: str, weekly_review_text: str = None) -> str:
+        """从结构化事件数据构建钉钉优化版 Markdown 消息。"""
+        valid_events = cls._dedupe_events_for_push(valid_events)
+        # ── 按 materiality 分层 ──
+        material_events = [
+            e for e in valid_events
+            if e.get("materiality") != "🟡 战略观察" and e.get("is_direct_material_impact", True) is not False
+        ]
+        ding_watch = [
+            e for e in valid_events
+            if e.get("materiality") == "🟡 战略观察" or e.get("is_direct_material_impact", True) is False
+        ]
 
-        与 _generate_v10_report_and_filter 的差异：
-          - 用 is_valid_practice 替代 is_valid_risk 过滤
-          - is_replicable 作标签展示（不过滤）
-          - 用 practice_category 分组（实践 5 类）
-          - 报告标题和洞察视角为同业实践学习
-        """
-        # ── 1. 确定性降噪（Python 物理隔绝） ──
-        invalid_events: list[dict] = []
-        valid_events: list[dict] = []
-        for event in all_events:
-            if not isinstance(event, dict):
-                continue
-            if event.get("is_valid_practice") is False:
-                invalid_events.append(event)
-            else:
-                valid_events.append(event)
-
-        for e in invalid_events:
-            title_key = e.get("core_event_title_en") or "?"
-            logger.info(f"[practice 降噪] 已过滤(无效实践): {e.get('entity', '?')} | {str(title_key)[:60]}")
-        logger.info(
-            f"Practice 降噪: {len(invalid_events)} invalid -> dropped, {len(valid_events)} valid -> report"
-        )
-
-        # ── 1.5. 洞察熔断（Python 物理隔绝，宁缺毋滥） ──
-        # 即使 is_valid_practice=true，若 LLM 未生成有效洞察，仍予废弃
-        before_melt = len(valid_events)
-        quality_events: list[dict] = []
-        for event in valid_events:
-            insight = str(event.get("learning_insight", "")).strip()
-            # 空字符串 / 占位符 / 过短 / 仅为格式模板 → 直接剔除
-            if (
-                not insight
-                or "待进一步分析" in insight
-                or len(insight) < 15
-                or insight.startswith("客观事实")
-            ):
-                logger.info(
-                    f"[practice 熔断] 洞察无效: {event.get('entity', '?')} | "
-                    f"insight={insight[:40] or '<empty>'}"
-                )
-                continue
-            quality_events.append(event)
-        valid_events = quality_events
-        melted = before_melt - len(valid_events)
-        if melted > 0:
-            logger.info(f"Practice 洞察熔断: {melted} 条因无有效洞察被废弃")
-        if not valid_events:
-            logger.info("Practice 熔断：本周所有实践事件洞察均不合格，生成占位报告。")
-
-        # ── 2. 同公司同质化事件语义合并 ──
-        pre_merge = len(valid_events)
-        valid_events = cls._merge_same_company_events(valid_events)
-        if len(valid_events) < pre_merge:
-            logger.info(f"Practice 语义合并: {pre_merge} -> {len(valid_events)}")
-
-        unwrap_count = 0
-        for event in valid_events:
-            sources = event.get("sources")
-            if not isinstance(sources, list):
-                continue
-            for s in sources:
-                if isinstance(s, dict):
-                    src_url = str(s.get("url", "")).strip()
-                    if src_url and "news.google.com" in src_url:
-                        resolved = cls._unwrap_google_news_url(src_url)
-                        if resolved != src_url:
-                            s["url"] = resolved
-                            unwrap_count += 1
-        if unwrap_count:
-            logger.info(f"Practice Google News URL 解包: {unwrap_count} 个链接已还原")
-
-        # ── 2.5. 静默阻断：本周无实践事件 ──
-        if not valid_events:
-            logger.info(f"Practice 模式: 本周分析 {len(all_events)} 篇，无可复制的良好实践，执行静默阻断。")
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            placeholder = "\n".join([
-                "# 🌱 同业良好实践周报 (Industry Best Practice Weekly)",
-                "",
-                f"> 📅 **生成时间**: {now_str}",
-                f"> 📊 **实践总数**: 0 条",
-                f"> 📰 **扫描样本**: {len(all_events)} 篇",
-                "",
-                "---",
-                "",
-                "## 📑 本周无可复制的良好实践",
-                "",
-                "本周扫描未发现可用于同业对标的创新实践或合规标杆案例。",
-                "系统将继续每周监控行业优秀做法。",
-                "",
-                "---",
-                "",
-                "🤖 *本报告由 ESG Intelligence Agent 自动生成，数据来源于公开新闻源。*",
-            ])
-            Path(report_path).write_text(placeholder, encoding="utf-8")
-            logger.info(f"Practice 静默阻断占位报告已写入: {report_path}")
-            return [], []
-
-        # ── 3. 按实践分类分组（经 map_practice_category 归一化） ──
-        from notion_mapping import map_practice_category as _norm_cat
-        for event in valid_events:
-            raw_cat = str(event.get("practice_category", event.get("risk_category", ""))).strip()
-            event["practice_category"] = _norm_cat(raw_cat)
-
-        categorized: dict[str, list[dict]] = {k: [] for k in cls.PRACTICE_CATEGORY_ORDER}
-        for event in valid_events:
-            cat = str(event.get("practice_category", "")).strip()
+        # ── 按风险类别分组（仅主层：直接材料冲击） ──
+        categorized: dict[str, list[dict]] = {k: [] for k in cls.CATEGORY_ORDER}
+        for e in material_events:
+            cat = str(e.get("risk_category", "")).strip()
+            if cat == "市场准入预警":
+                cat = "政策与市场准入"
             if cat in categorized:
-                categorized[cat].append(event)
+                categorized[cat].append(e)
             else:
-                categorized.setdefault("ESG披露与治理", []).append(event)
+                categorized.setdefault("合规与运营危机", []).append(e)
 
-        # ── 4. 推断时间跨度 ──
-        all_dates = [e.get("date", "") for e in valid_events]
-        dmax = max(all_dates) if all_dates else datetime.now().strftime("%Y-%m-%d")
-        # 实践周报：start_date 严格 = end_date - 7d，确保表头显示 7 天跨度
+        # 组内按日期降序
+        for cat in cls.CATEGORY_ORDER:
+            categorized[cat].sort(key=lambda e: str(e.get("date", "")), reverse=True)
+
+        # ── 标题 ──
+        if mode == "weekly":
+            title = "🏛️ ESG 全球地缘与合规周报 (Weekly Strategy Insight)"
+        else:
+            title = "🏛️ ESG 全球供应链动态日报 (Daily Intelligence)"
+
+        n_material = len(material_events)
+        n_watch = len(ding_watch)
+        n_companies = len(set(e.get("entity", "") for e in material_events + ding_watch))
+
+        lines: list[str] = [
+            f"# {title}",
+            f"> 📅 {now_str} · 🔴 {n_material} 条直接材料冲击 · 🟡 {n_watch} 条战略观察 · {n_companies} 家企业 · 📆 {dmin} ~ {dmax}",
+            "",
+        ]
+
+        # ── 目录 ──
+        lines.append("## 📑 目录")
+        lines.append("")
+        for cat in cls.CATEGORY_ORDER:
+            evs = categorized.get(cat, [])
+            if not evs:
+                continue
+            emoji = cls.CATEGORY_EMOJI_MAP.get(cat, "")
+            lines.append(f"- {emoji} **{cat}** · {len(evs)} 条")
+        if ding_watch:
+            lines.append(f"- 📡 **战略观察** · {len(ding_watch)} 条")
+        if mode == "weekly" and weekly_review_text:
+            lines.append(f"- 🔍 **监控矩阵盲区分析**")
+        lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━━━━")
+        lines.append("")
+
+        # ── 各分类内容 ──
+        for cat in cls.CATEGORY_ORDER:
+            evs = categorized.get(cat, [])
+            if not evs:
+                continue
+            emoji = cls.CATEGORY_EMOJI_MAP.get(cat, "")
+            desc = cls.CATEGORY_DESCRIPTIONS.get(cat, "")
+            lines.append(f"## {emoji} {cat}")
+            if mode == "weekly" and desc:
+                lines.append(f"> {desc}")
+            lines.append("")
+
+            for e in evs:
+                entity = str(e.get("entity", "")).strip()
+                title_text = str(
+                    e.get("display_title_zh")
+                    or e.get("core_event_title_en")
+                    or e.get("core_event_title", "")
+                ).strip()
+                insight = str(e.get("executive_insight", "")).strip()
+                date = str(e.get("date", ""))[:10]
+                is_material = bool(e.get("is_direct_material_impact", True))
+
+                severity = cls._get_severity_marker(cat, is_material)
+
+                event_lang = str(e.get("original_language", "")).strip()
+                sources_str, source_count = cls._format_sources_for_dingtalk(
+                    e.get("sources", []), event_lang,
+                )
+                basis = str(e.get("materiality_basis", "")).strip() or "公开信息指向材料端直接传导"
+
+                clean_link = ""
+                sources_list = e.get("sources", [])
+                if isinstance(sources_list, list):
+                    for s in sources_list:
+                        if isinstance(s, dict):
+                            url_val = str(s.get("url", "")).strip()
+                            if url_val.lower().startswith("http"):
+                                clean_link = url_val
+                                break
+                title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
+
+                lines.append(f"### {severity} {entity} | {title_link}")
+                lines.append(f"> ⚖️ **影响分级**：{e.get('materiality', '🔴 直接材料冲击')}")
+                lines.append("> ")
+                lines.append(f"> 💡 **判定依据**：{basis}")
+                if insight:
+                    lines.append("> ")
+                    lines.append(f"> 🧠 **高管洞察**：{insight}")
+                source_stat = f"{source_count} 家去重来源" if source_count else "来源未识别"
+                lines.append("> ")
+                lines.append(f"> 🏷️ {cat} | 📅 {date} | 📰 {source_stat}：{sources_str}")
+                lines.append("")
+                lines.append("━━━━━━━━━━━━━━━━━━━━")
+                lines.append("")
+
+        # ── 战略观察清单摘要（钉钉紧凑版，最多 5 条） ──
+        if ding_watch:
+            ding_watch_sorted = sorted(ding_watch, key=lambda e: str(e.get("date", "")), reverse=True)
+            lines.append("## 📡 战略观察清单")
+            lines.append("")
+            lines.append(f"> 以下 {len(ding_watch)} 条已确认风险，传导链暂未触及材料端，列入追踪")
+            lines.append("")
+            for e in ding_watch_sorted[:5]:
+                entity = str(e.get("entity", "")).strip()
+                title_text = str(
+                    e.get("display_title_zh") or e.get("core_event_title_en") or ""
+                ).strip()
+                date = str(e.get("date", ""))[:10]
+                cat = str(e.get("risk_category", "")).strip()
+                event_lang = str(e.get("original_language", "")).strip()
+                sources_str, source_count = cls._format_sources_for_dingtalk(e.get("sources", []), event_lang)
+                basis = str(e.get("materiality_basis", "")).strip() or "传导链暂未触及上游电池材料端"
+                insight = str(e.get("executive_insight", "")).strip()
+
+                clean_link = ""
+                sources_list = e.get("sources", [])
+                if isinstance(sources_list, list):
+                    for s in sources_list:
+                        if isinstance(s, dict):
+                            url_val = str(s.get("url", "")).strip()
+                            if url_val.lower().startswith("http"):
+                                clean_link = url_val
+                                break
+                title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
+
+                lines.append(f"### ⚪ {entity} | {title_link}")
+                lines.append(f"> ⚖️ **影响分级**：🟡 战略观察")
+                lines.append("> ")
+                lines.append(f"> 💡 **判定依据**：{basis}")
+                if insight:
+                    lines.append("> ")
+                    lines.append(f"> 🧠 **高管洞察**：{insight}")
+                source_stat = f"{source_count} 家去重来源" if source_count else "来源未识别"
+                lines.append("> ")
+                lines.append(f"> 🏷️ {cat} | 📅 {date} | 📰 {source_stat}：{sources_str}")
+                lines.append("")
+            if len(ding_watch) > 5:
+                lines.append(f"> *...等共 {len(ding_watch)} 条，完整内容见周报文件及 Notion 数据库*")
+                lines.append("")
+            lines.append("━━━━━━━━━━━━━━━━━━━━")
+            lines.append("")
+
+        # ── 周报盲区分析模块 ──
+        if mode == "weekly" and weekly_review_text:
+            lines.append("## 🔍 监控矩阵盲区分析")
+            lines.append("")
+            for br_line in str(weekly_review_text).splitlines():
+                lines.append(br_line)
+            lines.append("")
+            lines.append("━━━━━━━━━━━━━━━━━━━━")
+            lines.append("")
+
+        # ── 页脚 ──
+        lines.append("🤖 由 ESG Intelligence Agent 自动生成 · 仅供决策参考")
+
+        ding_content = "\n".join(lines)
+
+        # 截断保护
+        if len(ding_content) > 15000:
+            ding_content = ding_content[:15000] + "\n\n> ⚠️ 报告过长，已自动截断。完整内容请查看源文件。"
+
+        return ding_content
         end_dt = datetime.strptime(dmax, "%Y-%m-%d") if dmax != "?" else datetime.now()
         dmin = (end_dt - timedelta(days=7)).strftime("%Y-%m-%d")
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2035,6 +2098,8 @@ Output only valid JSON array, no markdown."""
             lines.append(f"- {emoji} **{cat}** · {len(evs)} 条")
         if ding_watch:
             lines.append(f"- 📡 **战略观察** · {len(ding_watch)} 条")
+        if mode == "weekly" and weekly_review_text:
+            lines.append(f"- 🔍 **监控矩阵盲区分析**")
         lines.append("")
         lines.append("━━━━━━━━━━━━━━━━━━━━")
         lines.append("")
@@ -2142,7 +2207,15 @@ Output only valid JSON array, no markdown."""
             lines.append("━━━━━━━━━━━━━━━━━━━━")
             lines.append("")
 
-
+        # ── 周报盲区分析模块 ──
+        if mode == "weekly" and weekly_review_text:
+            lines.append("## 🔍 监控矩阵盲区分析")
+            lines.append("")
+            for br_line in str(weekly_review_text).splitlines():
+                lines.append(br_line)
+            lines.append("")
+            lines.append("━━━━━━━━━━━━━━━━━━━━")
+            lines.append("")
 
         # ── 页脚 ──
         lines.append("🤖 由 ESG Intelligence Agent 自动生成 · 仅供决策参考")

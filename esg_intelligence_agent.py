@@ -2135,19 +2135,22 @@ Output only valid JSON array, no markdown."""
                 )
                 basis = str(e.get("materiality_basis", "")).strip() or "公开信息指向材料端直接传导"
 
-                clean_link = ""
-                sources_list = e.get("sources", [])
-                if isinstance(sources_list, list):
-                    for s in sources_list:
-                        if isinstance(s, dict):
-                            url_val = str(s.get("url", "")).strip()
-                            if url_val.lower().startswith("http"):
-                                clean_link = url_val
-                                break
+                clean_link = str(e.get("url") or e.get("link") or "").strip()
+                if not clean_link.lower().startswith("http"):
+                    sources_list = e.get("sources", [])
+                    if isinstance(sources_list, list):
+                        for s in sources_list:
+                            if isinstance(s, dict):
+                                url_val = str(s.get("url", "")).strip()
+                                if url_val.lower().startswith("http"):
+                                    clean_link = url_val
+                                    break
                 title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
 
                 lines.append(f"### {severity} {entity} | {title_link}")
-                lines.append(f"> 🚨 **影响分级**：{e.get('materiality', '🔴 直接材料冲击')}")
+                mat_str = str(e.get('materiality', '🔴 直接材料冲击'))
+                icon_marker = "⚖️" if "战略观察" in mat_str else "🚨"
+                lines.append(f"> {icon_marker} **影响分级**：{mat_str}")
                 lines.append("> ")
                 lines.append(f"> 💡 **判定依据**：{basis}")
                 if insight:
@@ -2179,19 +2182,20 @@ Output only valid JSON array, no markdown."""
                 basis = str(e.get("materiality_basis", "")).strip() or "传导链暂未触及上游电池材料端"
                 insight = str(e.get("executive_insight", "")).strip()
 
-                clean_link = ""
-                sources_list = e.get("sources", [])
-                if isinstance(sources_list, list):
-                    for s in sources_list:
-                        if isinstance(s, dict):
-                            url_val = str(s.get("url", "")).strip()
-                            if url_val.lower().startswith("http"):
-                                clean_link = url_val
-                                break
+                clean_link = str(e.get("url") or e.get("link") or "").strip()
+                if not clean_link.lower().startswith("http"):
+                    sources_list = e.get("sources", [])
+                    if isinstance(sources_list, list):
+                        for s in sources_list:
+                            if isinstance(s, dict):
+                                url_val = str(s.get("url", "")).strip()
+                                if url_val.lower().startswith("http"):
+                                    clean_link = url_val
+                                    break
                 title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
 
                 lines.append(f"### ⚪ {entity} | {title_link}")
-                lines.append(f"> 🚨 **影响分级**：🟡 战略观察")
+                lines.append(f"> ⚖️ **影响分级**：🟡 战略观察")
                 lines.append("> ")
                 lines.append(f"> 💡 **判定依据**：{basis}")
                 if insight:

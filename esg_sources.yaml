@@ -48,3 +48,122 @@ esg_sources:
     query: '("Climate Rights International" OR "site:cri.org") AND ("Indonesia" OR "nickel" OR "Weda Bay" OR "Morowali")'
     time_window: "7d"
     enabled: true
+
+  # 轨道8：IT之家 产业/汽车与供应链特定雷达
+  - id: "radar_ithome_industry"
+    type: "google_news_rss"
+    query: 'site:ithome.com AND ("电池" OR "宁德时代" OR "比亚迪" OR "华友" OR "宝马" OR "特斯拉" OR "停产" OR "供应链" OR "召回" OR "减产")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道9：汽车之家 行业频道与供应链雷达
+  - id: "radar_autohome_industry"
+    type: "google_news_rss"
+    query: 'site:autohome.com.cn AND ("电池" OR "宁德时代" OR "比亚迪" OR "华友" OR "宝马" OR "特斯拉" OR "停产" OR "供应链" OR "原材料" OR "召回" OR "减产")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道10：ACEA 欧洲汽车工业协会 - 政策与行业雷达
+  - id: "radar_acea_policy_news"
+    type: "google_news_rss"
+    query: 'site:acea.auto AND ("battery" OR "CRMA" OR "CSDDD" OR "CSRD" OR "emissions" OR "supply chain" OR "China" OR "regulation" OR "trade" OR "raw materials")'
+    time_window: "7d"
+    enabled: true
+
+  # 轨道11：Automotive Management Online - 汽车与供应链新闻雷达
+  - id: "radar_am_online_news"
+    type: "google_news_rss"
+    query: 'site:am-online.com AND ("battery" OR "EV" OR "supply chain" OR "BMW" OR "Tesla" OR "BYD" OR "CATL" OR "regulation" OR "recall" OR "shortage")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道12：Deutsche Welle 德国之声 - 汽车与工业雷达
+  - id: "radar_dw_auto_industry"
+    type: "google_news_rss"
+    query: 'site:dw.com AND ("auto" OR "car" OR "battery" OR "BMW" OR "Volkswagen" OR "VW" OR "Mercedes" OR "supply chain" OR "tariff" OR "China")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道13：Reuters 路透社 - 汽车与交通供应链雷达
+  - id: "radar_reuters_autos"
+    type: "google_news_rss"
+    query: 'site:reuters.com AND ("autos" OR "battery" OR "EV" OR "BMW" OR "Tesla" OR "CATL" OR "Huayou" OR "cobalt" OR "lithium" OR "nickel" OR "supply chain" OR "investigation")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道14：Automotive News - 全球汽车与电池产业链雷达
+  - id: "radar_autonews_industry"
+    type: "google_news_rss"
+    query: 'site:autonews.com AND ("battery" OR "EV" OR "BMW" OR "Tesla" OR "CATL" OR "supply chain" OR "lithium" OR "supplier" OR "recall" OR "plant")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道15：Electrive - 欧洲新能源汽车与电池产业雷达
+  - id: "radar_electrive_ev"
+    type: "google_news_rss"
+    query: 'site:electrive.com AND ("battery" OR "EV" OR "BMW" OR "CATL" OR "Huayou" OR "supply chain" OR "Gigafactory" OR "raw materials")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道16：InsideEVs - 全球 EV 与电池技术雷达
+  - id: "radar_insideevs_tech"
+    type: "google_news_rss"
+    query: 'site:insideevs.com AND ("battery" OR "EV" OR "Tesla" OR "BMW" OR "CATL" OR "supply chain" OR "recycled" OR "degradation")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道17：Electrek - 北美与全球电动汽车雷达
+  - id: "radar_electrek_global"
+    type: "google_news_rss"
+    query: 'site:electrek.co AND ("battery" OR "EV" OR "Tesla" OR "BMW" OR "CATL" OR "supply chain" OR "probe" OR "recall")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道18：CleanTechnica - 清洁交通与政策雷达
+  - id: "radar_cleantechnica_policy"
+    type: "google_news_rss"
+    query: 'site:cleantechnica.com AND ("battery" OR "EV" OR "China" OR "supply chain" OR "emissions" OR "policy" OR "tariff")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道19：The EV Report - B2B 制造与供应链雷达
+  - id: "radar_theevreport_b2b"
+    type: "google_news_rss"
+    query: 'site:theevreport.com AND ("battery" OR "EV" OR "supply chain" OR "manufacturing" OR "lithium" OR "nickel" OR "ESG")'
+    time_window: "7d"
+    enabled: true
+
+  # 轨道20：盖世汽车 (Gasgoo) - 全球汽车与供应链雷达
+  - id: "radar_gasgoo_global"
+    type: "google_news_rss"
+    query: 'site:gasgoo.com AND ("battery" OR "CATL" OR "Huayou" OR "BYD" OR "BMW" OR "supply chain" OR "installation" OR "sodium")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道21：Automotive News Europe - 欧洲车企与电池厂雷达
+  - id: "radar_autonews_europe"
+    type: "google_news_rss"
+    query: 'site:europe.autonews.com AND ("battery" OR "EV" OR "BMW" OR "VW" OR "Mercedes" OR "supply chain" OR "tariff")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道22：Paul Tan - 东南亚汽车与出海产业链雷达
+  - id: "radar_paultan_asean"
+    type: "google_news_rss"
+    query: 'site:paultan.org AND ("battery" OR "EV" OR "BYD" OR "Geely" OR "Huayou" OR "Indonesia" OR "nickel" OR "supply chain")'
+    time_window: "24h"
+    enabled: true
+
+  # 轨道23：Benchmark Mineral - 电池原材料与矿产情报雷达
+  - id: "radar_benchmark_minerals"
+    type: "google_news_rss"
+    query: 'site:benchmarkminerals.com AND ("lithium" OR "cobalt" OR "nickel" OR "battery" OR "supply chain" OR "minerals" OR "UFLPA")'
+    time_window: "7d"
+    enabled: true
+
+  # 轨道24：Fastmarkets - 大宗电池原材料定价与合规雷达
+  - id: "radar_fastmarkets_battery"
+    type: "google_news_rss"
+    query: 'site:fastmarkets.com AND ("battery" OR "lithium" OR "cobalt" OR "nickel" OR "supply chain" OR "cell" OR "black mass")'
+    time_window: "7d"
+    enabled: true

@@ -39,7 +39,7 @@ This document defines the core domain rules and logic constraints for this speci
 
 ## 4. Configuration & Sources
 - `config.yaml`：12 家公司、5 地理轨、多语言风险主题与良好实践关键词、排除模式。
-- `esg_sources.yaml`：5 条静态雷达查询（BYD 欧洲、华友非洲、BHRRC、紫金全球、美国海关 WRO）。
+- `esg_sources.yaml`：24 条静态雷达查询（包含 BYD 欧洲、华友非洲、BHRRC、紫金全球、美国海关 WRO、印尼 HPAL 湿法尾矿、CRI 人权预警、IT之家 产业雷达、汽车之家 行业雷达、ACEA 欧洲车协、AM-Online、德国之声 DW、路透社 Autos、Automotive News、Electrive 欧洲 EV、InsideEVs 技术、Electrek 北美、CleanTechnica 政策、The EV Report、盖世汽车 Gasgoo、Paul Tan 东南亚、Benchmark Mineral 电池矿产、Fastmarkets 大宗）。
 - Google News RSS 为主采集渠道，BHRRC 和 EFRAG 为专项轨。
 - `days_limit: 7`，每公司上限 20 条。
 - ThreadPoolExecutor：RSS 20 线程、内容提取 10 线程、LLM BATCH_SIZE=15。

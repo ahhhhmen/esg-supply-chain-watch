@@ -162,6 +162,21 @@ def canonical_event_key(event: dict) -> str:
     if (_has(entity, r"宝马|bmw") or _has(text, r"宝马|bmw")) and _has(text, r"韩国|korea|south korea") and _has(text, r"起火|火灾|fire|explosion") and _has(text, r"禁令|禁售|sales ban|ban"):
         return "event:v1:bmw:korea-engine-fire-sales-ban"
 
+    if _has(entity, r"通用汽车|general motors|\bgm\b") and _has(text, r"unifor") and _has(
+        text, r"工会|谈判|集体|bargaining|union|target"
+    ):
+        return "event:v1:general-motors:unifor-collective-bargaining"
+
+    if _has(entity, r"梅赛德斯|奔驰|mercedes") and _has(
+        text, r"加班|工时|薪酬|无偿|加班费|延长工时|减产|overtime|wage|working hours"
+    ) and _has(text, r"德国|员工|工会|germany|workers"):
+        return "event:v1:mercedes-benz:germany-working-hours-wage-cut"
+
+    if (_has(entity, r"bhrrc|企业人权|business and human rights") or _has(text, r"bhrrc")) and _has(
+        text, r"转型矿产|人权|中国投资|transition minerals|human rights|chinese investment"
+    ):
+        return "event:v1:bhrrc:transition-minerals-human-rights-report"
+
     if _has(entity, r"大众|volkswagen|vw") and _has(
         text,
         r"裁员|关厂|关闭.*工厂|德国工厂|工会|layoff|job cuts?|plant closure|factory closure|union",

@@ -283,8 +283,7 @@ class ESGIntelligenceAgent:
    【灰度条款 — 官方声明未出前默认 false】：
    · 若事件属于「电动汽车起火但起火原因未公布」，在无官方（NHTSA/车企/消防部门）明确声明指向动力电池前 → 默认 false。
    · 若事件属于「整车召回但未公布具体涉及零部件清单」→ 默认 false。
-   
-   【is_direct_material_impact 为 false 时 executive_insight 的强制写作规则】：
+      【is_direct_material_impact 为 false 时 executive_insight 的强制写作规则与逻辑一致性约束】：
    当 is_direct_material_impact=false 时，executive_insight 必须如实写为：
    "该事件属于车企终端运营/技术故障，当前链条未传导至上游材料端。"
    严禁在 is_direct_material_impact=false 的情况下生搬硬套任何「订单波动」「供应链不确定性」「材料需求变化」等废话。
@@ -304,7 +303,7 @@ class ESGIntelligenceAgent:
 4. 字数红线：50-80 汉字或英文单词，低于 50 或超过 80 视为违规。
 5. 禁止废话：严禁使用"可能影响运营""面临声誉风险""需持续关注""建议华友"等空洞套话。必须指明具体的传导环节和波及路径。
 6. Tone Constraint (语气约束)：请始终以兼具严谨逻辑与务实精神的资深专业顾问身份撰写洞察。保持绝对的【客观、中立、克制】底色。严禁滥用耸动词汇（如'突发'、'震惊'、'致命'、'严重威胁'）。除非有确凿证据表明工厂在物理层面上【今天已经停产】，否则只做中性的事实陈述与逻辑推演。坚决避免'狼来了'效应。
-7. 语言质量硬约束：输出的分析文本必须符合资深商业顾问的行文规范。请在输出前进行严格的自我语病审查，确保语言精炼、专业、流畅，绝对禁止出现词句重复或语法结构杂糅。
+7. 语言质量与实体精准性硬约束：输出的分析文本必须符合资深商业顾问的行文规范。请在输出前进行严格的自我语病审查，确保语言精炼、专业、流畅，绝对禁止出现词句重复或双重主语/语法结构杂糅（例如“华友在印尼的镍矿项目该事件需...”等混乱句式）。权威 NGO 报告/人权质询类事件（如 BHRRC 报告），entity 必须精确匹配或关联至被监控企业（如华友钴业或其他监控对象），绝对禁止标记为 generic 的“宏观政策”。
 8. 正例（合规）：
    - "宝马韩国市场因发动机起火被禁售，触发韩国《汽车管理法》召回程序。华友作为宝马电池材料上游供应商，需关注该车型所涉电池型号是否与华友正极材料供应体系存在关联，韩国市场禁售可能导致该车型减产，间接影响华友对韩系电池厂的正极材料出货排期。"
    - "特斯拉瑞典维修工人罢工规模虽缩减，但 IF Metall 工会仍维持封锁。北欧市场劳资冲突的持续发酵可能加速主机厂对供应链人权合规的审查力度，华友在印尼镍矿项目的劳工标准及出海合规文档将面临更严苛的欧盟 CSDDD 穿透审计。"
@@ -797,9 +796,9 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
     _MERGE_SIMILARITY_THRESHOLD = 0.45  # Jaccard 相似度阈值：>= 此值视为同一事件
     _WORD_PATTERN = re.compile(r"\w+", re.UNICODE)
     _OEM_RESTRUCTURING_RE = re.compile(
-        r"裁员|关厂|关闭工厂|工厂关闭|关闭.*工厂|成本削减|削减成本|重组|结构调整|工会反对|工会|"
+        r"裁员|关厂|关闭工厂|工厂关闭|关闭.*工厂|成本削减|削减成本|重组|结构调整|工会反对|工会|无偿加班|加班|延长工时|工时|削减薪酬|降薪|集体谈判|谈判目标|谈判|"
         r"layoff|job cut|job cuts|plant closure|factory closure|close .* plant|close .* factory|"
-        r"cost cut|cost-cut|restructuring|union opposition|union",
+        r"cost cut|cost-cut|restructuring|union opposition|union|overtime|wage cut|working hours|collective bargaining|bargaining",
         re.IGNORECASE,
     )
     _MATERIAL_PROMOTION_RE = re.compile(
@@ -831,10 +830,22 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         return " ".join(str(f) for f in fields if f)
 
     @classmethod
+    def _factual_event_text(cls, event: dict) -> str:
+        fields = [
+            event.get("entity", ""),
+            event.get("core_event_title_en", event.get("core_event_title", "")),
+            event.get("display_title_zh", ""),
+            event.get("title", ""),
+            event.get("risk_category", ""),
+        ]
+        return " ".join(str(f) for f in fields if f)
+
+    @classmethod
     def _is_oem_restructuring_without_material_trigger(cls, event: dict) -> bool:
-        text = cls._event_text(event)
-        return bool(cls._OEM_RESTRUCTURING_RE.search(text)) and not bool(
-            cls._MATERIAL_PROMOTION_RE.search(text)
+        factual_text = cls._factual_event_text(event)
+        full_text = cls._event_text(event)
+        return (bool(cls._OEM_RESTRUCTURING_RE.search(full_text)) or bool(cls._OEM_RESTRUCTURING_RE.search(factual_text))) and not bool(
+            cls._MATERIAL_PROMOTION_RE.search(factual_text)
         )
 
     @classmethod
@@ -867,12 +878,11 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         if not isinstance(event, dict) or event.get("is_valid_risk") is False:
             return event
 
-        text = cls._event_text(event)
-        if cls._MATERIAL_PROMOTION_RE.search(text):
-            event["is_direct_material_impact"] = True
-            event["materiality"] = "🔴 直接材料冲击"
-            event["materiality_basis"] = "公开信息指向电池/材料订单、生产或准入限制"
-        elif cls._is_oem_restructuring_without_material_trigger(event):
+        factual_text = cls._factual_event_text(event)
+        insight = str(event.get("executive_insight", "")).strip()
+        is_indirect_insight = bool(re.search(r"间接|暂未传导|未确认|暂列战略观察|暂未触及", insight))
+
+        if cls._is_oem_restructuring_without_material_trigger(event) or is_indirect_insight:
             event["is_direct_material_impact"] = False
             event["materiality"] = "🟡 战略观察"
             event["materiality_basis"] = "未确认电动车、电池工厂或材料订单直接受影响"
@@ -881,9 +891,14 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                 or event.get("core_event_title_en")
                 or "该事件"
             ).strip()
-            event["executive_insight"] = (
-                f"{title}，反映整车端成本压力和劳资摩擦。当前公开信息未确认电动车或电池材料订单削减，暂列战略观察而非直接材料冲击。"
-            )
+            if not insight or is_indirect_insight or "整车端成本压力" not in insight:
+                event["executive_insight"] = (
+                    f"{title}，反映整车端成本压力和劳资摩擦。当前公开信息未确认电动车或电池材料订单削减，暂列战略观察而非直接材料冲击。"
+                )
+        elif cls._MATERIAL_PROMOTION_RE.search(factual_text):
+            event["is_direct_material_impact"] = True
+            event["materiality"] = "🔴 直接材料冲击"
+            event["materiality_basis"] = "公开信息指向电池/材料订单、生产或准入限制"
         else:
             if event.get("is_direct_material_impact") is False:
                 event["materiality"] = "🟡 战略观察"
@@ -1065,15 +1080,36 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         """
         # ── 1. 确定性降噪（Python 物理隔绝） ──
         invalid_events: list[dict] = []
-        watch_events: list[dict] = []   # is_valid_risk=true + is_direct_material_impact=false → 战略观察清单
-        valid_events: list[dict] = []   # is_valid_risk=true + is_direct_material_impact=true  → 主报告
+        valid_risk_events: list[dict] = []
         for event in all_events:
             if not isinstance(event, dict):
                 continue
             event = cls._apply_materiality_guardrails(event)
             if event.get("is_valid_risk") is False:
                 invalid_events.append(event)
-            elif event.get("is_direct_material_impact") is False:
+            else:
+                valid_risk_events.append(event)
+
+        # 审计日志（v12：优先使用 core_event_title_en）
+        for e in invalid_events:
+            title_key = e.get("core_event_title_en") or e.get("core_event_title", "?")
+            logger.info(f"[v12 降噪] 已过滤(无效风险): {e.get('entity', '?')} | {str(title_key)[:60]}")
+
+        # ── 1.5. 统一语义合并（所有有效风险事件统一定重，隔绝一事两报与分级冲突） ──
+        pre_merge_count = len(valid_risk_events)
+        merged_risk_events = cls._merge_same_company_events(valid_risk_events)
+        if len(merged_risk_events) < pre_merge_count:
+            logger.info(
+                f"统一语义合并: {pre_merge_count} -> {len(merged_risk_events)} events "
+                f"(移除 {pre_merge_count - len(merged_risk_events)} 条跨批次/同质化重复)"
+            )
+
+        # 按合并与 guardrail 后的评级划分 valid_events (🔴) 和 watch_events (🟡)
+        valid_events: list[dict] = []
+        watch_events: list[dict] = []
+        for event in merged_risk_events:
+            event = cls._apply_materiality_guardrails(event)
+            if event.get("is_direct_material_impact") is False:
                 event["materiality"] = "🟡 战略观察"
                 event.setdefault("materiality_basis", "传导链暂未触及上游电池材料端")
                 watch_events.append(event)
@@ -1082,30 +1118,27 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                 event.setdefault("materiality_basis", "公开信息指向材料端直接传导")
                 valid_events.append(event)
 
-        # 审计日志（v12：优先使用 core_event_title_en）
-        for e in invalid_events:
-            title_key = e.get("core_event_title_en") or e.get("core_event_title", "?")
-            logger.info(f"[v12 降噪] 已过滤(无效风险): {e.get('entity', '?')} | {str(title_key)[:60]}")
+        # ── 1.55. 防错兜底：交叉检查防止 valid_events 与 watch_events 间残留同键事件 ──
+        if valid_events and watch_events:
+            valid_keys = {canonical_event_key(e) for e in valid_events if canonical_event_key(e)}
+            filtered_watch = []
+            for w in watch_events:
+                w_key = canonical_event_key(w)
+                if w_key and w_key in valid_keys:
+                    for v in valid_events:
+                        if canonical_event_key(v) == w_key:
+                            v["sources"] = cls._merge_event_sources(v, [w])
+                            break
+                    logger.info(f"[交叉去重] 战略观察事件与主报告同键合并: {w.get('entity')} | {w_key}")
+                else:
+                    filtered_watch.append(w)
+            watch_events = filtered_watch
+
         logger.info(
-            f"Python 降噪: {len(invalid_events)} invalid 已丢弃 | "
+            f"Python 降噪与去重完成: {len(invalid_events)} invalid 已丢弃 | "
             f"{len(valid_events)} 直接材料冲击 → 主报告 | "
             f"{len(watch_events)} 战略观察 → 观察清单"
         )
-
-        # ── 1.5. 同公司同质化事件语义合并（主层） ──
-        pre_merge_count = len(valid_events)
-        valid_events = cls._merge_same_company_events(valid_events)
-        if len(valid_events) < pre_merge_count:
-            logger.info(
-                f"语义合并: {pre_merge_count} -> {len(valid_events)} events "
-                f"(移除 {pre_merge_count - len(valid_events)} 条同质化重复)"
-            )
-
-        # ── 1.5b. 观察清单去重（Jaccard 合并，跳过 LLM 聚合以节省 token） ──
-        if watch_events:
-            pre_watch = len(watch_events)
-            watch_events = cls._merge_same_company_events(watch_events)
-            logger.info(f"观察清单去重: {pre_watch} -> {len(watch_events)} 条")
 
         # ── 1.6. 终极 LLM 全局聚合层 (Final Convergence) — 仅主层 ──
         # 解决跨批次 Semantic Drift 导致的假性重复 — 当前 valid_events 通常已 ≤10 条

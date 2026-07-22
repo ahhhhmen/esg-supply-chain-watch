@@ -33,6 +33,8 @@ This document defines the core domain rules and logic constraints for this speci
 - **LLM 时间校验铁律与历史隐患深度复盘例外 (Prompt Reinforcement)**：大模型 System Prompt 强制注入系统时间 `今天是 {current_date}。` 对于普通新闻，早于限制时间的事件直接判定为失效情报。例外规则：若为最近 7 天内刚被主流媒体/权威 NGO 首次/最新【深度曝光、复盘追责】的过往重大隐患，判定为 `is_valid_risk = true` 归入“机构与声誉预警”或“合规与运营危机”，并注明【历史隐患深度复盘/追责】。同时，因辅料暴涨、辅料断供或设备高负荷检修导致的 30% 以上重大物理停产/产能扣减，必须判定为 `is_valid_risk = true` 归入“供应链断裂预警”。
 - **子实体与别名正则界定 (Subsidiary Aliases & ASCII-Boundary Protection)**：监控企业可在 `config.yaml` 中配置 `aliases` 关联子公司与项目（如华越 PT Huayue、华飞 PT Huafei、IWIP、IMIP 等）。在 RSS 查询及 `EntityFilter` 比对中自动包含别名。`EntityFilter._build_pattern` 必须使用 `(?<![a-zA-Z0-9])` 与 `(?![a-zA-Z0-9])` 替代 `\b`，解决 CJK 字符与英文紧挨（如 `"园区PT Huayue"`）导致 `\b` 界定失灵的问题。
 - **主机厂非核心事故与实体错误过滤 (Chemical & Scope Filters)**：对于发生在非监控车企自身主体（如航空航天或非核心零部件供应商 GKN 等）的化学品/环保安全事故，即使标题中包含车企关键词或标签，LLM 必须判定 `is_valid_risk = false` 降噪拦截；同时，主机厂常规厂区发生的普通化学品泄漏、常规环保/安全事故或非电池核心零部件污染，对上游电池材料没有直接的供应链穿透冲击，必须判定 `is_direct_material_impact = false`（作为黄色“战略观察”处理，不推钉钉主报告），且其 `executive_insight` 强制套用硬性模板：`"该事件属于车企终端运营/技术故障，当前链条未传导至上游材料端。"`
+- **整车厂劳资博弈与评级一致性 (OEM Labor & Materiality Guardrails)**：整车厂（OEM）端常规劳资谈判、工会目标指定、无偿加班/降薪争议、工时与整车产量微调（未确认导致电池工厂停产或电池材料订单确认削减前），必须判定为 `is_direct_material_impact = false`（黄色“战略观察”）。Python 侧 `_apply_materiality_guardrails` 强制使用纯新闻事实（`_factual_event_text`）校验提升规则，严禁 LLM 在洞察中推算出的间接假设（如“可能影响电动车减产”）误将事件升级为红色冲击。若洞察中出现“间接”、“未确认”、“暂未传导”，强制判为 `is_direct_material_impact = false`。
+- **统一语义合并与跨列表去重 (Unified Cross-List Deduplication)**：`_generate_v10_report_and_filter` 必须在划分 `valid_events` (🔴) 与 `watch_events` (🟡) 之前，对所有有效风险事件执行统一语义合并，并在划分后执行 `valid_keys` 交叉碰撞，合并同键来源并剔除观察清单重复项，彻底隔离“一事两报”与评级冲突。
 
 
 ## 4. Configuration & Sources

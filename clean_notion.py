@@ -111,30 +111,21 @@ def _page_to_record(page: dict) -> PageRecord:
 
 
 def _query_all_pages(notion: Any, database_id: str) -> list[dict]:
-    """Query every non-archived row, supporting both database and data_source APIs."""
-    query_fn = None
-    query_kwargs: dict[str, Any] = {}
-    try:
-        db_info = notion.databases.retrieve(database_id=database_id)
-        data_sources = db_info.get("data_sources", [])
-        if data_sources:
-            query_fn = notion.data_sources.query
-            query_kwargs = {"data_source_id": data_sources[0]["id"]}
-    except Exception:
-        pass
-
-    if query_fn is None:
-        query_fn = notion.databases.query
-        query_kwargs = {"database_id": database_id}
-
+    """Query every non-archived row using notion.request or databases endpoint."""
     pages: list[dict] = []
     cursor: Optional[str] = None
     while True:
-        kwargs = dict(query_kwargs)
+        body: dict[str, Any] = {"page_size": 100}
         if cursor:
-            kwargs["start_cursor"] = cursor
-        kwargs["page_size"] = 100
-        result = query_fn(**kwargs)
+            body["start_cursor"] = cursor
+        try:
+            result = notion.request(
+                path=f"databases/{database_id}/query",
+                method="POST",
+                body=body,
+            )
+        except AttributeError:
+            result = notion.databases.query(database_id=database_id, **body)
         pages.extend(result.get("results", []))
         if not result.get("has_more"):
             break

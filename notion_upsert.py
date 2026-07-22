@@ -84,39 +84,114 @@ def query_page_by_external_id(
     Returns:
         匹配页面的 page_id，或 None 表示不存在
     """
-    # 尝试通过 data_sources 端点查询（inline database 场景）
+    # 尝试通过 databases.query 端点查询（最兼容 SDK 及 Mock 场景）
     try:
-        db_info = notion.databases.retrieve(database_id=database_id)
-        ds_list = db_info.get("data_sources", [])
-        if ds_list:
-            data_source_id = ds_list[0].get("id")
-            result = notion.data_sources.query(
-                data_source_id=data_source_id,
+        if hasattr(notion, "databases") and hasattr(notion.databases, "query"):
+            result = notion.databases.query(
+                database_id=database_id,
                 filter={
                     "property": EXTERNAL_ID,
                     "rich_text": {"equals": external_id},
                 },
                 page_size=1,
             )
-            pages = result.get("results", [])
-            if pages:
-                return pages[0]["id"]
+            if isinstance(result, dict):
+                pages = result.get("results", [])
+                if pages:
+                    return pages[0]["id"]
     except Exception:
         pass
 
-    # 回退到 databases.query 端点
+    # 尝试通过 data_sources 端点查询（inline database 场景）
     try:
-        result = notion.databases.query(
-            database_id=database_id,
-            filter={
-                "property": EXTERNAL_ID,
-                "rich_text": {"equals": external_id},
-            },
-            page_size=1,
-        )
-        pages = result.get("results", [])
-        if pages:
-            return pages[0]["id"]
+        if hasattr(notion, "databases") and hasattr(notion.databases, "retrieve"):
+            db_info = notion.databases.retrieve(database_id=database_id)
+            if isinstance(db_info, dict):
+                ds_list = db_info.get("data_sources", [])
+                if ds_list and hasattr(notion, "data_sources"):
+                    data_source_id = ds_list[0].get("id")
+                    result = notion.data_sources.query(
+                        data_source_id=data_source_id,
+                        filter={
+                            "property": EXTERNAL_ID,
+                            "rich_text": {"equals": external_id},
+                        },
+                        page_size=1,
+                    )
+                    if isinstance(result, dict):
+                        pages = result.get("results", [])
+                        if pages:
+                            return pages[0]["id"]
+    except Exception:
+        pass
+
+    # 回退尝试 notion.request 通用 HTTP 请求
+    try:
+        if hasattr(notion, "request"):
+            result = notion.request(
+                path=f"databases/{database_id}/query",
+                method="POST",
+                body={
+                    "filter": {
+                        "property": EXTERNAL_ID,
+                        "rich_text": {"equals": external_id},
+                    },
+                    "page_size": 1,
+                },
+            )
+            if isinstance(result, dict):
+                pages = result.get("results", [])
+                if pages:
+                    return pages[0]["id"]
+    except Exception:
+        pass
+
+    return None
+
+
+def query_page_by_event_key(
+    notion: Any,
+    database_id: str,
+    event: dict,
+) -> Optional[str]:
+    """
+    当 External ID 未查到时，以 Entity + Date + Canonical Event Key 作为二级兜底过滤，
+    防范大模型生成的不同字眼标题产生重复页面。
+    """
+    entity = map_entity(event.get("entity", ""))
+    date = str(event.get("date", ""))[:10]
+    if not entity or not date or entity == "其他":
+        return None
+
+    filter_body = {
+        "and": [
+            {"property": "Entity", "select": {"equals": entity}},
+            {"property": "Date", "date": {"equals": date}},
+        ]
+    }
+
+    try:
+        pages = []
+        if hasattr(notion, "databases") and hasattr(notion.databases, "query"):
+            res = notion.databases.query(database_id=database_id, filter=filter_body, page_size=20)
+            if isinstance(res, dict):
+                pages = res.get("results", [])
+        elif hasattr(notion, "request"):
+            res = notion.request(
+                path=f"databases/{database_id}/query",
+                method="POST",
+                body={"filter": filter_body, "page_size": 20},
+            )
+            if isinstance(res, dict):
+                pages = res.get("results", [])
+
+        target_key = canonical_event_key(event)
+        for p in pages:
+            props = p.get("properties", {})
+            p_title = "".join(t.get("plain_text", "") for t in props.get("标题", {}).get("title", []))
+            p_event = {"entity": entity, "date": date, "display_title_zh": p_title}
+            if canonical_event_key(p_event) == target_key:
+                return p.get("id")
     except Exception:
         pass
 
@@ -198,7 +273,12 @@ def upsert_notion_page(
     Returns:
         (action, page_id) — action 为 "created" / "updated" / "skipped"
     """
-    entity = event.get("entity", "")
+    # 强制执行实体归一化，从源头上杜绝 Entity 变成 "其他"
+    original_entity = event.get("entity", "")
+    canonical_entity_name = map_entity(original_entity)
+    event["entity"] = canonical_entity_name
+
+    entity = canonical_entity_name
     date = event.get("date", "")
     title = event.get("display_title_zh", "")
     title_short = title[:50]
@@ -214,8 +294,16 @@ def upsert_notion_page(
         )
         return ("skipped", None)
 
-    # 查询是否已存在
+    # 1. 一级防线：通过精准 External ID 查询
     existing_page_id = query_page_by_external_id(notion, database_id, external_id)
+
+    # 2. 二级防线：若 External ID 匹配失败，通过 Entity + Date + Event Key 语义匹配防重
+    if not existing_page_id:
+        existing_page_id = query_page_by_event_key(notion, database_id, event)
+        if existing_page_id:
+            logger.info(
+                f"  🛡️ 二级语义防重关卡命中匹配页面 [{existing_page_id[:8]}]，将执行更新升级而非重复创建。"
+            )
 
     if properties_builder is None:
         properties_builder = build_notion_properties

@@ -70,7 +70,7 @@ This document defines the core domain rules and logic constraints for this speci
 - 当前已确认的 Prompt 质量与地缘推送排版规则：
   - **公共法案与地缘政策去重**：`canonical_event_key()` 必须包含欧盟电池法案授权法案质量平衡系统、津巴布韦锂禁令、中国两用物项管制公告等硬规则，并在 `_SIGNAL_GROUPS` 中扩展政策法规与回收比率信号词，确保同一法案跨媒体报道强确定性合并。
   - **推送排版与分级标识禁令**：钉钉 Markdown 推送元信息必须严格收纳于引用块 `>` 中，标题内嵌洗白后的原文 URL `[实体 | 标题](URL)`。`🟡 战略观察` / `🟢 低度监测` 事件绝对禁挂 `🚨` 或 `🔴 重磅预警` 标识，必须单独输出至「📡 战略观察清单」。
-  - **基线与官方源防护**：新闻媒体域名绝对禁止识别为政府官方域名；国际政治声明（如 G7 宣言）绝对禁止误配第三方 ESG 行业认证标准基线。
+  - **Notion 去重与实体归一法则**：`audit_notion_duplicates.py` 与 `clean_notion.py` 用于数据库多维反向去重（精确 External ID、Canonical Event Key 语义、新闻 URL 直链及垃圾页面）。`notion_mapping.py` 中的 `map_entity` 必须自动将印尼项目及子公司别名（如 `"华飞"`、`"华越"`、`"IWIP"`、`"IMIP"`）映射至对应的监控主体公司（如 `"华友钴业"`），禁止将已知监控企业的子公司归入 `"其他"` 实体。
 
 ---
 

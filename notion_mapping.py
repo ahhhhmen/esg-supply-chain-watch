@@ -87,14 +87,36 @@ def map_risk_category(original_category: str, event_title: str = "",
     return "治理合规"
 
 
+_ENTITY_MAP_RULES = [
+    (re.compile(r"华飞|huafei|华越|huayue|iwip|imip|华友", re.IGNORECASE), "华友钴业"),
+    (re.compile(r"紫金|zijin", re.IGNORECASE), "紫金矿业"),
+    (re.compile(r"宁德时代|catl", re.IGNORECASE), "宁德时代"),
+    (re.compile(r"比亚迪|byd", re.IGNORECASE), "比亚迪"),
+    (re.compile(r"赣锋|ganfeng", re.IGNORECASE), "赣锋锂业"),
+    (re.compile(r"天齐|tianqi", re.IGNORECASE), "天齐锂业"),
+    (re.compile(r"洛阳钼业|洛钼|cmoc", re.IGNORECASE), "洛阳钼业"),
+    (re.compile(r"中伟|cngr", re.IGNORECASE), "中伟股份"),
+    (re.compile(r"容百|ronbay", re.IGNORECASE), "容百科技"),
+    (re.compile(r"恩捷|semcorp", re.IGNORECASE), "恩捷股份"),
+    (re.compile(r"特斯拉|tesla", re.IGNORECASE), "特斯拉"),
+    (re.compile(r"宝马|bmw", re.IGNORECASE), "宝马"),
+    (re.compile(r"奔驰|mercedes", re.IGNORECASE), "奔驰"),
+    (re.compile(r"通用汽车|general motors|\bgm\b", re.IGNORECASE), "通用汽车"),
+    (re.compile(r"大众|volkswagen|\bvw\b", re.IGNORECASE), "大众汽车"),
+]
+
+
 def map_entity(original_entity: str) -> str:
     """
-    实体名称归一化（可选）。
-    目前 Notion 允许 select 字段自动创建新选项，这里仅做轻量清理。
+    实体名称归一化。自动将子公司/园区别名映射至监控主体企业。
     """
     if not original_entity:
         return "其他"
-    return original_entity.strip()
+    text = original_entity.strip()
+    for pattern, canonical in _ENTITY_MAP_RULES:
+        if pattern.search(text):
+            return canonical
+    return text
 
 
 # ════════════════════════════════════════════════════════════════════════════

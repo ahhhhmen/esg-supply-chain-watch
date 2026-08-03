@@ -87,6 +87,10 @@ class SourcingEngine:
                 pass
         return url
 
+    def save_processed_urls(self, urls: List[str]) -> None:
+        """保存经过校验与语义处理的 URL，并更新/清洗 14 天前的记录"""
+        self._save_processed_urls(urls)
+
     def _save_processed_urls(self, urls: List[str]) -> None:
         """保存新抓取到的 URL，并更新/清洗 14 天前的记录"""
         now_str = datetime.now(timezone.utc).isoformat()
@@ -140,9 +144,6 @@ class SourcingEngine:
 
             except Exception:
                 logger.exception("[%s] fetch failed — continuing to next source", src_id)
-
-        # 汇总数据后，将抓取到的新 URL 写入持久化记忆库
-        self._save_processed_urls([item["link"] for item in all_results])
 
         logger.info("Total aggregated items: %d", len(all_results))
         return all_results
@@ -256,9 +257,6 @@ class SourcingEngine:
                         "[%s] future raised %s",
                         entry.get("source_id", "?"), exc,
                     )
-
-        # 汇总数据后，将抓取到的新 URL 写入持久化记忆库
-        self._save_processed_urls([item["link"] for item in all_results])
 
         logger.info(
             "Dynamic URL fetch complete: %d/%d URLs processed, %d total items",

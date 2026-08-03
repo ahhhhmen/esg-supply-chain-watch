@@ -253,13 +253,13 @@ class ESGIntelligenceAgent:
      · 企业涉及的产品安全调查、召回程序启动（即便尚未公布具体缺陷）。
      · 监管机构（SEC/FTC/EU/NHTSA/CBP）对该企业的新增审查、质询或警告。
      · 涉及该企业供应链节点的出口管制、关税调整、实体清单变更。
-   - 以下可判定为 false：纯股价涨跌、财报亏损、CEO言论、基金调研、券商研报、M&A传闻（未证实）、产品参数披露、技术路线探讨。
+   - 以下可判定为 false：纯股价涨跌、财报亏损、CEO言论、基金调研、券商研报、M&A传闻（未证实）、产品参数披露、技术路线探讨、终端车企/经销商发生的个案交通事故、试驾事故/碰撞、个案人身伤害索赔诉讼、个案退定金/加价/售后纠纷、车辆盗窃或维修个案（绝对不属于 ESG 供应链风险，必须判定 is_valid_risk=false）。
    - 【灰色地带判例】若不确定，倾向于判定为 true 并让下游 Python 管道做最终裁决。
 3. 严格分类 (risk_category) 与负面清单：
    - "早期合规预警"：属地政府/警方正式发起的环保调查、劳工合规审查、毒地/毒土处理 Probe、安全监察等尚未引发停产但已进入正式调查程序的早期合规阻力。此类别仅适用于调查/Probe/Investigation 性质的新闻，不适用于 NGO 指控或媒体质疑。
    - "供应链断裂预警"：包含物理层面的供给中断（工厂因灾停产、矿端断供、核心供应商破产、物流瘫痪），以及【因辅料价格暴涨、辅料断供、设备高负荷检修引发的 30% 以上重大物理停产/产能扣减】。【负面清单】以下内容绝对不属于本类，必须归入 is_valid_risk=false 并直接丢弃：常规投资/股价波动、财报亏损、M&A/股权转让、需求疲软/销量下滑、新产品发布、技术合作、融资/增资。遇到这些话题时 risk_category 填入"无关噪音"且 is_valid_risk=false。
    - "市场准入预警"：仅限进出口禁令、关税惩罚、实体清单、强迫劳动货物扣留。【负面清单】绝对排除产品召回、质量事故、软件故障——这些归入"合规与运营危机"。
-   - "合规与运营危机"：包含劳工罢工/抗议、重大安全事故（尾矿坝溃坝/爆炸/矿难）、产品召回、车辆起火、软件安全缺陷、严重环保罚单。
+   - "合规与运营危机"：包含劳工罢工/抗议、重大安全事故（尾矿坝溃坝/爆炸/矿难）、产品召回、车辆起火、软件安全缺陷、严重环保罚单。【负面清单】绝对排除终端个案交通事故、试驾碰撞/索赔、个人民事伤害诉讼、买卖合同/定金纠纷——这些归入 is_valid_risk=false 并直接丢弃。
    - "机构与声誉预警"：NGO指控（如CRI、BHRRC报告）、人权机构质询、评级下调、主流媒体深度复盘曝光过往未化解的重大隐患等高声誉与合规追责风险事件。
 
 4. 材料冲击判定 (is_direct_material_impact) — 绝对红线：
@@ -817,6 +817,12 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
         r"需关注|持续关注|建议|应当|需要|可考虑|可能影响运营",
         re.IGNORECASE,
     )
+    _RETAIL_ACCIDENT_CLAIM_RE = re.compile(
+        r"试驾.*(事故|索赔|碰撞|致人|受伤|车祸)|试驾车|交通事故索赔|人身伤害索赔|个人索赔|撞车索赔|买卖纠纷|退定金|维权纠纷|车辆被盗|二手车纠纷|"
+        r"test drive.*(crash|accident|lawsuit|claim|sue|suing|injury)|personal injury claim|personal injury lawsuit|"
+        r"individual lawsuit|customer claim|traffic collision claim",
+        re.IGNORECASE,
+    )
 
     @classmethod
     def _event_text(cls, event: dict) -> str:
@@ -876,6 +882,18 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
     def _apply_materiality_guardrails(cls, event: dict) -> dict:
         """Apply deterministic materiality rules after LLM extraction."""
         if not isinstance(event, dict) or event.get("is_valid_risk") is False:
+            return event
+
+        factual_text = cls._factual_event_text(event)
+        full_text = cls._event_text(event)
+
+        # 硬性阻断拦截：终端个案交通事故、试驾碰撞/索赔、个人民事诉讼
+        if cls._RETAIL_ACCIDENT_CLAIM_RE.search(factual_text) or cls._RETAIL_ACCIDENT_CLAIM_RE.search(full_text):
+            title = str(event.get("display_title_zh") or event.get("core_event_title_en") or "该事件").strip()
+            logger.info(f"[v12 降噪] 物理拦截终端个案交通事故/零售诉讼: {event.get('entity', '?')} | {title}")
+            event["is_valid_risk"] = False
+            event["risk_category"] = "无关噪音"
+            event["executive_insight"] = "终端个案交通事故/消费维权诉讼，非 ESG 供应链风险。"
             return event
 
         factual_text = cls._factual_event_text(event)
@@ -2805,6 +2823,12 @@ Output only valid JSON array, no markdown."""
             )
 
         # ── Phase 4: DeepSeek LLM Semantic Processing ────
+        # 将通过实体校验与限流过滤、真正进入分析管道的 URL 增量保存至去重记忆库
+        processed_urls_to_save = [a.url for a in self.articles if a.url]
+        if processed_urls_to_save:
+            engine.save_processed_urls(processed_urls_to_save)
+            logger.info(f"Phase 4: 已将 {len(processed_urls_to_save)} 条通过校验的 URL 增量保存至去重记忆库。")
+
         raw_data_list = []
         for article in self.articles:
             zh = article.company_name_zh

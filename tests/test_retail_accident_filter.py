@@ -41,6 +41,12 @@ def test_other_retail_lawsuits_and_accidents_are_filtered_out():
             "display_title_zh": "福特试驾车发生车祸致人受伤",
             "is_valid_risk": True,
         },
+        {
+            "entity": "特斯拉",
+            "core_event_title_en": "Tesla explodes in Seattle, injuring firefighter sent to hospital",
+            "display_title_zh": "特斯拉在西雅图发生爆炸，消防员受伤送医",
+            "is_valid_risk": True,
+        },
     ]
 
     for ev in events:

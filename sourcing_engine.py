@@ -22,6 +22,35 @@ import requests
 import yaml
 from bs4 import BeautifulSoup
 from esg_agent.config import FETCH_HEADERS
+
+
+def _fetch_rss_bytes(url: str, timeout: float = 15.0) -> Optional[bytes]:
+    """线程级超时拉取 RSS 字节流，返回 None 表示失败/超时。
+
+    requests 的 timeout 参数只覆盖连接与读取，不覆盖 DNS 解析（getaddrinfo），
+    DNS 挂起时请求会无限期阻塞、卡死整条采集链。这里用 daemon 线程 + join
+    超时兜底：超时后放弃该请求，daemon 线程随进程退出，不影响主流程。
+    """
+    import threading
+
+    result: dict = {"ok": False, "content": None}
+
+    def _do_fetch() -> None:
+        try:
+            resp = requests.get(url, headers=FETCH_HEADERS, timeout=timeout)
+            resp.raise_for_status()
+            result["ok"] = True
+            result["content"] = resp.content
+        except Exception:
+            result["ok"] = False
+
+    worker = threading.Thread(target=_do_fetch, daemon=True)
+    worker.start()
+    # DNS 解析 + 连接 + 读取一并纳入等待上限，超时按失败处理
+    worker.join(timeout + 5)
+    if result["ok"]:
+        return result["content"]
+    return None
 from esg_agent.fetchers import resolve_news_url
 
 logger = logging.getLogger(__name__)
@@ -187,10 +216,11 @@ class SourcingEngine:
 
             items: List[Dict[str, Any]] = []
             try:
-                # 限时拉取再解析，避免个别 URL 挂起占住 worker 导致并发队列堵塞
-                resp = requests.get(rss_url, headers=FETCH_HEADERS, timeout=15)
-                resp.raise_for_status()
-                feed = feedparser.parse(resp.content)
+                # 线程级超时拉取（覆盖 DNS 挂起），避免个别 URL 占住 worker 导致并发队列堵塞
+                content = _fetch_rss_bytes(rss_url)
+                if content is None:
+                    return []
+                feed = feedparser.parse(content)
                 for feed_entry in feed.entries:
                     pub_date: Optional[datetime] = None
                     parsed: Optional[Any] = None
@@ -309,17 +339,13 @@ class SourcingEngine:
         )
         logger.debug("[%s] RSS URL: %s", source_id, rss_url)
 
-        # feedparser 直接解析 URL 没有超时保护，网络挂起会卡死整条串行采集链；
-        # 改为 requests 限时拉取字节流再解析，超时/异常直接视为该轨道零命中。
-        try:
-            resp = requests.get(
-                rss_url, headers=FETCH_HEADERS, timeout=15,
-            )
-            resp.raise_for_status()
-            feed = feedparser.parse(resp.content)
-        except Exception as e:
-            logger.debug("[%s] RSS fetch failed (non-critical): %s", source_id, e)
+        # feedparser 直接解析 URL 没有超时保护，且 requests 的 timeout 覆盖不到
+        # DNS 解析，网络挂起会卡死整条串行采集链；统一走线程级超时拉取。
+        content = _fetch_rss_bytes(rss_url)
+        if content is None:
+            logger.debug("[%s] RSS fetch failed/timeout (non-critical)", source_id)
             return []
+        feed = feedparser.parse(content)
         cutoff = datetime.now(timezone.utc) - self._parse_time_window(time_window_str)
 
         results: List[Dict[str, Any]] = []

@@ -1,0 +1,60 @@
+22:31:09 [INFO] 运行日志写入: logs/run_2026-08-14_daily.log
+22:31:09 [INFO] ═══ ESG Intelligence Agent v9 | Mode: DAILY ═══
+22:31:09 [INFO] Building query tasks for mode=daily: 4 topics, 12 companies, 5 geo tracks
+22:31:09 [INFO]   Daily mode: skipping premium global tracks (EFRAG)
+22:31:09 [INFO] Total query tasks generated: 252
+22:31:09 [INFO] Query tasks: 252 (mode=daily)
+22:31:09 [INFO] Cheap LLM provider initialized: deepseek(deepseek-chat)
+22:31:11 [INFO] [AI发现] 生成了 8 条动态搜索查询: ['(Congo OR DRC OR Zambia) cobalt mine accident OR labor OR child labor', 'Indonesia nickel smelter labor dispute OR accident OR environmental', 'Chile OR Argentina lithium mine protest OR community OR water']...
+22:31:11 [INFO] AI discovery: generated 8 dynamic queries
+22:31:55 [INFO] Phase 1 totals: 73 static + 94 dynamic + 0 ai-discovery = 167 items
+22:31:55 [INFO] Phase 1: Sourcing Engine 返回了 167 条有效纯净数据。
+22:31:55 [INFO] Phase 2 dedup (title+norm_url): 167 -> 164 articles
+22:31:55 [INFO] Phase 3: Extracting body text from 164 articles (concurrent)...
+22:31:56 [INFO]   Progress: 20/164
+22:31:57 [INFO]   Progress: 40/164
+22:31:57 [INFO]   Progress: 60/164
+22:31:59 [INFO]   Progress: 80/164
+22:32:00 [INFO]   Progress: 100/164
+22:32:02 [INFO]   Progress: 120/164
+22:32:03 [INFO]   Progress: 140/164
+22:32:18 [INFO]   Progress: 160/164
+22:33:05 [INFO] Phase 3 done. Body text extracted: 0/164
+22:33:05 [INFO] Phase 2.5 entity filter: 164 -> 164
+22:33:05 [INFO] Phase 2.6 per-company throttle (max 20/firm): 164 -> 20
+22:33:05 [INFO] Phase 4: 已将 20 条通过校验的 URL 增量保存至去重记忆库。
+22:33:05 [INFO] LLM processing: 20 articles -> 2 batch(es) (BATCH_SIZE=15, mode=daily)
+22:33:05 [INFO]   Batch 1/2: articles #1-15 (15 items)
+22:33:05 [INFO] LLM provider initialized: deepseek(deepseek-chat)
+22:33:16 [INFO]   LLM response received (4718 chars).
+22:33:16 [INFO]   Batch 1: 7 events (0 valid) extracted.
+22:33:16 [INFO]   Batch 2/2: articles #16-20 (5 items)
+22:33:25 [INFO]   LLM response received (3888 chars).
+22:33:25 [INFO]   Batch 2: 5 events (0 valid) extracted.
+22:33:25 [INFO] LLM processing complete: 12 total events from 2 batch(es).
+22:33:25 [INFO] Phase 4 done. LLM returned 12 total events (valid + invalid).
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 特斯拉 | Musk compensation exceeds Tesla annual revenue
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 特斯拉 | Musk trillion-dollar compensation changes CEO pay ceiling
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 特斯拉 | Waymo expands robotaxis in California
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 特斯拉 | BYD launches Qin Max EV at half Tesla price
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 通用汽车 | Bowman Chevrolet launches mobile service
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 大众汽车 | German car industry hemorrhaging jobs
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 大众汽车 | Hyundai starts building IONIQ 3
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 通用汽车 | GM exits one battery venture and starts another
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 特斯拉 | Musk CEO pay ratio report 2025
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 福特汽车 | PUBG Mobile Ford Mustang skin update
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 宏观政策 | US pressures EU on non-tariff trade commitments
+22:33:25 [INFO] [v12 降噪] 已过滤(无效风险): 宏观政策 | DIY heat pump plugs into wall outlet
+22:33:25 [INFO] Python 降噪与去重完成: 12 invalid 已丢弃 | 0 直接材料冲击 → 主报告 | 0 战略观察 → 观察清单
+22:33:25 [INFO] 今日分析样本 12 篇，命中合规红线 0 篇，执行静默阻断。
+22:33:25 [INFO] 静默阻断占位报告已写入: esg_global_report.md
+22:33:25 [INFO] Phase 5 done. Python pipeline: 0 valid items -> esg_global_report.md
+22:33:25 [INFO] 💰 Token 消耗: in=12,431 out=3,023 total=15,454 cost=$0.0026
+22:33:25 [INFO] Report archived to: reports/2026-08-14_daily.md
+22:33:25 [INFO] PDF written: reports/2026-08-14_daily.pdf (0 elements)
+22:33:25 [INFO] PDF archived to: reports/2026-08-14_daily.pdf
+22:33:25 [INFO] All done in 136.4s | 0 valid items | ? ~ ?
+22:33:25 [INFO] 今日无风险事件，发送「无风险」心跳通知。
+22:33:25 [INFO] 正在向钉钉发送情报简报...
+22:33:27 [INFO] 钉钉推送成功
+22:33:27 [INFO] 无风险事件，跳过 Notion 推送。

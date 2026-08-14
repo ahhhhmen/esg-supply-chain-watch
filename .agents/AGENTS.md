@@ -57,6 +57,7 @@ This document defines the core domain rules and logic constraints for this speci
 - GitHub Actions 三条定时工作流：daily（周一至四、六日）、weekly（周四）、practice（周三），均在 UTC 22:00。
 - 成本追踪：$0.14/M input tokens、$0.28/M output tokens。
 - **记忆库自动推送**：GitHub Actions 工作流（每日/地缘周报/实践周报）跑批完成后，自动将更新后的 `logs/processed_urls.json` 进行 git add, commit 并 push 推送回代码仓库，保证次日虚拟机加载最新记忆。
+- **运行日志回传**：主引擎 `run()` 每次跑批将日志写入 `logs/run_YYYY-MM-DD_{mode}.log`（`_setup_file_logging`），三条 CI 工作流随报告/记忆库/指标一并回传。`logs/run_*.log` 不 gitignore，便于事后排查采集/网络类异常（如 DNS 挂起卡死）。
 
 
 ## 6. Local-First & Privacy Constraints

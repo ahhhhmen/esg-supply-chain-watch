@@ -2504,6 +2504,7 @@ Output only valid JSON array, no markdown."""
         if mode == "practice":
             report_path = "esg_practice_report.md"
         t0 = time.monotonic()
+        self._setup_file_logging(mode)
         logger.info(f"═══ ESG Intelligence Agent v9 | Mode: {mode.upper()} ═══")
 
         # ── 重置 Token 统计 ─────────────────────────
@@ -2871,6 +2872,26 @@ Output only valid JSON array, no markdown."""
 
         # ── 运行指标收集 ─────────────────────────────────
         self._collect_metrics(mode, elapsed, len(all_v10_events), len(valid_events), len(intelligence_json))
+
+    def _setup_file_logging(self, mode: str) -> None:
+        """将本次运行日志写入 logs/run_YYYY-MM-DD_{mode}.log。
+
+        采集/网络异常只在运行日志中可见，CI 跑批后把该文件随报告一起回传，
+        便于事后排查（此前日志只输出到 stderr，CI 环境里难以留存）。
+        同一实例重复调用时先移除旧 handler，避免日志重复写入。
+        """
+        if getattr(self, "_file_handler", None) is not None:
+            logger.removeHandler(self._file_handler)
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        log_path = log_dir / f"run_{datetime.now().strftime('%Y-%m-%d')}_{mode}.log"
+        handler = logging.FileHandler(log_path, encoding="utf-8")
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
+        )
+        logger.addHandler(handler)
+        self._file_handler = handler
+        logger.info(f"运行日志写入: {log_path}")
 
     def _collect_metrics(self, mode: str, elapsed: float, total_events: int, valid_events: int, final_items: int) -> None:
         """收集并持久化本次运行的监控指标。"""

@@ -58,6 +58,9 @@ jobs:
         if [ -f "metrics.jsonl" ]; then
           git add metrics.jsonl
         fi
+        if ls logs/run_*.log >/dev/null 2>&1; then
+          git add logs/run_*.log
+        fi
         
         git diff-index --quiet HEAD || git commit -m "🤖 每周自动更新: 地缘政策周报与去重记忆库 ($(date +'%Y-%m-%d %H:%M'))"
         git push

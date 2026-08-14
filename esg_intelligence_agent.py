@@ -628,12 +628,59 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
             logger.warning(f"[AI发现] 查询生成失败 ({type(e).__name__}: {e})，回退到静态矩阵")
             return []
 
+    def _build_matrix_summary(self) -> str:
+        """构建当前监控矩阵摘要，供盲区分析 LLM 参考。
+
+        盲区分析此前只收到事件摘要、看不到已有矩阵配置，导致反复把已覆盖的
+        关键词/轨道当作“缺失”重复建议。此方法把企业名单、主题关键词与静态
+        雷达轨道一并注入，让 LLM 只在真实缺口上提建议。
+        """
+        cfg = self.config
+        lines: list[str] = []
+
+        company_names = [cfg.get_company_display_name(c) for c in cfg.companies]
+        lines.append("【目标监控企业】" + "、".join(company_names))
+        lines.append("")
+
+        def _topic_lines(topics: list[dict], label: str) -> None:
+            lines.append(f"【{label}】")
+            for t in topics:
+                cat = t.get("category", "")
+                kw = t.get("keywords", {})
+                kw_en = kw.get("en-US", []) or kw.get("zh-CN", [])
+                lines.append(f"- {cat}: {', '.join(kw_en[:12])}")
+            lines.append("")
+
+        _topic_lines(cfg.daily_topics, "日常主题关键词")
+        _topic_lines(cfg.weekly_topics, "周报主题关键词")
+
+        try:
+            import yaml as _yaml
+            src_path = Path(__file__).parent / "esg_sources.yaml"
+            raw = _yaml.safe_load(src_path.read_text(encoding="utf-8"))
+            sources = raw.get("esg_sources", [])
+            lines.append("【静态雷达轨道】")
+            for s in sources:
+                sid = s.get("id", "?")
+                query = str(s.get("query", "")).strip()
+                mark = "" if s.get("enabled", True) else " [停用]"
+                if query:
+                    lines.append(f"- {sid}{mark}: {query[:160]}")
+                else:
+                    lines.append(f"- {sid}{mark}: (URL 型轨道)")
+            lines.append("")
+        except Exception as e:
+            logger.warning(f"读取 esg_sources.yaml 构建矩阵摘要失败: {e}")
+
+        return "\n".join(lines).strip()
+
     def _weekly_threat_landscape_review(
         self, events: list[dict]
     ) -> Optional[str]:
         """Phase 6 (weekly only): LLM 分析本周监控盲区。
 
-        将本周所有捕获事件发送给 DeepSeek，分析并返回分析结果。
+        将本周所有捕获事件与当前矩阵摘要一起发送给 DeepSeek，
+        分析并返回分析结果。
         """
 
         if not events:
@@ -653,21 +700,35 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
             )
         events_text = "\n".join(events_summary_lines)
 
-        system_prompt = """你是一个 ESG 监控系统架构师。你会收到本周系统捕获的所有风险事件摘要。
-请分析当前监控矩阵的盲区，并严格按照以下格式输出分析内容：
+        matrix_summary = self._build_matrix_summary()
 
-1. **缺失实体**: 本周事件中出现了哪些未被纳入监控的重要企业/组织？
-2. **缺失关键词**: 哪些风险类型的关键词组合未被覆盖，导致可能漏报？
+        system_prompt = """你是一个 ESG 监控系统架构师。你会收到本周系统捕获的风险事件摘要，以及当前监控矩阵的完整配置摘要。
+请基于两者对比，分析当前监控矩阵的真实盲区，并严格按照以下格式输出：
+
+1. **缺失实体**: 本周事件中出现了哪些未被纳入监控、且与目标企业/电池材料供应链直接相关的重要企业/组织？
+2. **缺失关键词**: 哪些风险类型的关键词组合未被现有主题覆盖，导致可能漏报与目标企业直接相关的风险？
 3. **新兴威胁模式**: 本周事件中是否出现了新的制裁/立法/产业趋势，需要新增监控轨道？
 4. **具体建议**: 对 esg_sources.yaml 新增轨道的具体 YAML 配置建议。
 
-【输出要求与限制】：
-- **绝对禁止包含任何对话性/寒暄性前言或尾注**。例如，不要包含类似于“好的，作为ESG监控系统架构师，我已分析本周捕获...”、“收到，分析如下：”或“希望这些建议对您有帮助”等任何客套话、自称或过渡句。
-- **直接以第1个标题或列表项开始输出**（即以 `1. **缺失实体**:` 开始）。
-- 用中文输出，简洁专业。如果当前矩阵覆盖良好，请直接输出“本周未发现明显盲区”，同样不加任何客套话。
-- 格式必须为规范的 Markdown。"""
+【分析前提与硬约束】：
+- 当前矩阵已经覆盖的内容，不得作为“缺失/盲区”重复建议。先核对矩阵摘要，只提真实缺口。
+- 事件摘要中标注 `有效:False` 的事件属于系统已正确降噪的无关噪音（与电池材料供应链无关），**严禁**据此建议新增轨道或将其列为“缺失实体/关键词”。
+- 只有 `有效:True` 的事件中暴露出的、且与 12 家目标企业及其电池材料链条直接相关的实体/关键词，才算真盲区。
+- 每条新增轨道建议必须标注相关性（高/中/低），并说明其与华友钴业或电池材料供应链的传导关系；低相关性的建议直接省略。
+- 如果矩阵覆盖良好、无明显盲区，直接输出“本周未发现明显盲区”。
 
-        user_message = f"以下是本周捕获 of 风险事件（共 {len(events)} 条，展示前 {min(len(events), 50)} 条）:\n\n{events_text}"
+【输出要求与限制】：
+- **绝对禁止包含任何对话性/寒暄性前言或尾注**。禁止“好的”“收到”“希望这些建议对您有帮助”等客套话、自称或过渡句。
+- **直接以 `1. **缺失实体**:` 开始输出**。
+- 用中文输出，简洁专业。
+- 格式必须为规范的 Markdown。
+- **语言质量硬约束**：输出需符合资深商业顾问行文规范，输出前进行自我语病审查，确保语言精炼、专业、流畅，禁止词句重复、语法结构杂糅或逻辑自相矛盾。"""
+
+        user_message = (
+            f"以下是本周捕获的风险事件（共 {len(events)} 条，展示前 {min(len(events), 50)} 条）：\n\n"
+            f"{events_text}\n\n"
+            f"以下是当前监控矩阵配置摘要：\n\n{matrix_summary}"
+        )
 
         try:
             analysis = self._call_llm_cheap(

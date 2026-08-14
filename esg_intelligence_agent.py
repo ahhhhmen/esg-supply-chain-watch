@@ -2486,9 +2486,16 @@ Output only valid JSON array, no markdown."""
             db_id = os.environ.get(
                 "NOTION_PRACTICE_DATABASE_ID" if mode == "practice" else "NOTION_DATABASE_ID", ""
             )
-            if db_id:
-                notion_url = f"https://app.notion.com/p/fangxie/{db_id}"
+            url_env = (
+                "NOTION_PRACTICE_DATABASE_URL" if mode == "practice" else "NOTION_DATABASE_URL"
+            )
+            # 优先使用用户配置的完整数据库 URL（含 workspace 前缀），
+            # 未配置时回退到 Notion ID 短链自动重定向，避免硬编码 workspace slug。
+            notion_url = os.environ.get(url_env, "").strip()
+            if notion_url:
                 ding_content += f"\n\n📋 [查看完整数据库]({notion_url})"
+            elif db_id:
+                ding_content += f"\n\n📋 [查看完整数据库](https://www.notion.so/{db_id})"
 
             logger.info("正在向钉钉发送情报简报...")
             secret = os.environ.get("DINGTALK_SECRET")
@@ -2650,7 +2657,10 @@ Output only valid JSON array, no markdown."""
         engine = SourcingEngine()
 
         # 1a. 静态轨道（esg_sources.yaml）
-        raw_items = engine.fetch_all_active_sources()
+        # weekly/practice 模式覆盖为 7 天窗口，与动态矩阵保持一致，
+        # 避免静态雷达（BHRRC/WRO/紫金/BYD 等专项轨）仍按 24h 回看漏报。
+        static_time_window = "7d" if mode in ("weekly", "practice") else None
+        raw_items = engine.fetch_all_active_sources(time_window_override=static_time_window)
 
         # 1b. 动态任务矩阵（config.yaml query_tasks）— 修复死代码
         dynamic_urls: list[dict] = []

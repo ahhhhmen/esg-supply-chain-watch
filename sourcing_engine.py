@@ -122,8 +122,14 @@ class SourcingEngine:
     # Public API
     # ------------------------------------------------------------------
 
-    def fetch_all_active_sources(self) -> List[Dict[str, Any]]:
-        """遍历所有启用的源，汇总标准化结果列表。"""
+    def fetch_all_active_sources(self, time_window_override: Optional[str] = None) -> List[Dict[str, Any]]:
+        """遍历所有启用的源，汇总标准化结果列表。
+
+        Args:
+            time_window_override: 可选时间窗覆盖（如 weekly/practice 传 "7d"），
+                用于统一覆盖各静态轨道的 time_window，避免周报模式下
+                静态雷达仍按默认 24h 窗口回看、漏掉 7 天内的有效情报。
+        """
         all_results: List[Dict[str, Any]] = []
 
         for src in self.sources:
@@ -132,7 +138,7 @@ class SourcingEngine:
 
             try:
                 if src_type == "google_news_rss":
-                    items = self._fetch_google_news_rss(src)
+                    items = self._fetch_google_news_rss(src, time_window_override)
                 elif src_type == "html":
                     items = self._fetch_html_target(src)
                 else:
@@ -283,11 +289,13 @@ class SourcingEngine:
             return timedelta(weeks=value)
         return timedelta(days=value)
 
-    def _fetch_google_news_rss(self, source: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _fetch_google_news_rss(
+        self, source: Dict[str, Any], time_window_override: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         from urllib.parse import quote
 
         query_raw: str = source.get("query", "")
-        time_window_str: str = source.get("time_window", "7d")
+        time_window_str: str = time_window_override or source.get("time_window", "7d")
         source_id: str = source.get("id", "unknown")
 
         encoded_query = quote(query_raw, safe="")

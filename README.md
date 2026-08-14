@@ -47,6 +47,9 @@ DEEPSEEK_API_KEY=sk-your-key-here
 # NOTION_TOKEN=secret_xxx
 # NOTION_DATABASE_ID=xxx
 # NOTION_PRACTICE_DATABASE_ID=xxx
+# 可选：钉钉推送里的「查看完整数据库」跳转链接（含 workspace 前缀的完整 URL）
+# NOTION_DATABASE_URL=https://www.notion.so/your-workspace/xxx
+# NOTION_PRACTICE_DATABASE_URL=https://www.notion.so/your-workspace/yyy
 # 可选：钉钉推送
 # DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxx
 EOF

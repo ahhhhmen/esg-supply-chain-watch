@@ -21,6 +21,7 @@ import feedparser
 import requests
 import yaml
 from bs4 import BeautifulSoup
+from esg_agent.config import FETCH_HEADERS
 from esg_agent.fetchers import resolve_news_url
 
 logger = logging.getLogger(__name__)
@@ -186,7 +187,10 @@ class SourcingEngine:
 
             items: List[Dict[str, Any]] = []
             try:
-                feed = feedparser.parse(rss_url)
+                # 限时拉取再解析，避免个别 URL 挂起占住 worker 导致并发队列堵塞
+                resp = requests.get(rss_url, headers=FETCH_HEADERS, timeout=15)
+                resp.raise_for_status()
+                feed = feedparser.parse(resp.content)
                 for feed_entry in feed.entries:
                     pub_date: Optional[datetime] = None
                     parsed: Optional[Any] = None
@@ -305,7 +309,17 @@ class SourcingEngine:
         )
         logger.debug("[%s] RSS URL: %s", source_id, rss_url)
 
-        feed = feedparser.parse(rss_url)
+        # feedparser 直接解析 URL 没有超时保护，网络挂起会卡死整条串行采集链；
+        # 改为 requests 限时拉取字节流再解析，超时/异常直接视为该轨道零命中。
+        try:
+            resp = requests.get(
+                rss_url, headers=FETCH_HEADERS, timeout=15,
+            )
+            resp.raise_for_status()
+            feed = feedparser.parse(resp.content)
+        except Exception as e:
+            logger.debug("[%s] RSS fetch failed (non-critical): %s", source_id, e)
+            return []
         cutoff = datetime.now(timezone.utc) - self._parse_time_window(time_window_str)
 
         results: List[Dict[str, Any]] = []

@@ -41,7 +41,7 @@ def test_gm_unifor_negotiation_downgraded_to_watch():
     assert processed["materiality"] == "🟡 战略观察"
 
 
-def test_unified_deduplication_prevents_duplicate_across_valid_and_watch():
+def test_unified_deduplication_prevents_duplicate_across_valid_and_watch(tmp_path):
     event_red = {
         "entity": "通用汽车",
         "core_event_title_en": "Unifor designates GM as next bargaining target",
@@ -67,7 +67,7 @@ def test_unified_deduplication_prevents_duplicate_across_valid_and_watch():
 
     all_events = [event_red, event_yellow]
     valid_events, watch_events = ESGIntelligenceAgent._generate_v10_report_and_filter(
-        all_events, mode="daily"
+        all_events, mode="daily", report_path=str(tmp_path / "report.md")
     )
 
     # Both events represent the same GM Unifor bargaining event, so they should merge!

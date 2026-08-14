@@ -4,12 +4,12 @@
 
 ## 核心能力
 
-- **多语种全球监控**: 中文/英语/印尼语/法语，4 个语种定向 Google News 抓取
+- **多语种全球监控**: 中文/英语/印尼语/法语/俄语，5 个语种 5 条地理轨定向 Google News 抓取（含 BHRRC、EFRAG 等专项轨）
 - **6 阶段智能流水线**: 供料 → 去重 → 实体校验 → LLM 语义降噪 → 合并渲染 → 推送归档
-- **双频动态播报**: `daily`（日常运营风险）/ `weekly`（宏观政策与地缘合规）
-- **四重风险标签**: 供应链断裂 / 政策市场准入 / 合规运营危机 / 机构声誉预警 / 早期合规预警
+- **三种动态播报模式**: `daily`（日常运营风险）/ `weekly`（宏观政策与地缘合规）/ `practice`（同业最佳实践）
+- **5 大风险标签**: 供应链中断 / 政策市场准入 / 合规运营危机 / 机构声誉预警 / 早期合规预警
 - **华友钴业中心制**: 所有高管洞察从华友钴业的产业位置出发进行传导推演
-- **多渠道推送**: 钉钉 Webhook + Notion Database（幂等 upsert）
+- **多渠道推送**: 钉钉 Webhook + Notion 双库（ESG Risk / ESG Practice，SHA-256 确定性 External ID 幂等 upsert）
 
 ## 技术架构
 
@@ -63,12 +63,15 @@ python esg_intelligence_agent.py --mode weekly --no-push
 
 ## GitHub Actions 自动化
 
-- **每日监控** (UTC 22:00 周一-周六): `.github/workflows/esg_monitor.yml`
+- **每日监控** (UTC 22:00 周一至四、周六日): `.github/workflows/esg_monitor.yml`
 - **每周周报** (UTC 22:00 周四): `.github/workflows/esg_policy_weekly.yml`
+- **实践周报** (UTC 22:00 周三): `.github/workflows/esg_practice_weekly.yml`
+
+每次跑批完成后自动将报告、去重记忆库（`logs/processed_urls.json`）与运行指标（`metrics.jsonl`）回推仓库。
 
 ## 运行指标
 
-每次运行自动收集并持久化到 `metrics.jsonl`：
+每次运行自动收集并持久化到 `metrics.jsonl`（已纳入 CI 回传，随仓库版本化）：
 
 ```json
 {

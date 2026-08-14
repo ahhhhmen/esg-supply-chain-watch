@@ -2,7 +2,10 @@
 reports/*
 pdfs/*
 *.pdf
-metrics.jsonl
+
+# 一次性 backfill 原始数据与每周被覆盖的盲区分析产物，不入库
+logs/backfill_raw/
+logs/matrix_optimization_suggestions.md
 
 # Testing
 .pytest_cache/

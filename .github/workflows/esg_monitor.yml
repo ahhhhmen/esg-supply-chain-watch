@@ -55,6 +55,9 @@ jobs:
         if [ -f "logs/processed_urls.json" ]; then
           git add logs/processed_urls.json
         fi
+        if [ -f "metrics.jsonl" ]; then
+          git add metrics.jsonl
+        fi
         
         git diff-index --quiet HEAD || git commit -m "🤖 每日自动更新: 舆情简报与去重记忆库 ($(date +'%Y-%m-%d %H:%M'))"
         git push

@@ -46,7 +46,7 @@ from esg_agent.config import (
     _GEO_CN_LANGS,
 )
 from esg_agent.fetchers import (
-    resolve_news_url, strip_html,
+    resolve_news_url, strip_html, _is_valid_news_url,
 )
 from radar_infra.fetch import extract_article_body
 from radar_infra.guard import safe_json_parse
@@ -888,6 +888,19 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
     )
 
     @classmethod
+    def _is_clean_source_url(cls, url) -> bool:
+        """校验 URL 是否可作为新闻直链输出。
+
+        LLM 可能从正文重新引入统计脚本/静态资产等垃圾 URL，采集阶段的
+        resolve_news_url 过滤不到它们，故在渲染前兜底校验，拦截非新闻域名
+        （google-analytics、googletagmanager、fonts.googleapis 等）及 .js/.css。
+        """
+        try:
+            return bool(url) and str(url).lower().startswith("http") and _is_valid_news_url(str(url))
+        except Exception:
+            return False
+
+    @classmethod
     def _event_text(cls, event: dict) -> str:
         fields = [
             event.get("entity", ""),
@@ -1450,7 +1463,7 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                                 if label in seen_source_labels:
                                     continue
                                 seen_source_labels.add(label)
-                                if src_url and src_url.lower().startswith("http"):
+                                if cls._is_clean_source_url(src_url):
                                     source_links.append(f"[{label}]({src_url})")
                                 else:
                                     source_links.append(label)
@@ -1501,7 +1514,7 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                             src_url = str(s.get("url", "")).strip()
                             if name and name not in seen_labels_w:
                                 seen_labels_w.add(name)
-                                source_links.append(f"[{name}]({src_url})" if src_url.startswith("http") else name)
+                                source_links.append(f"[{name}]({src_url})" if cls._is_clean_source_url(src_url) else name)
                 sources_str_w = " · ".join(source_links[:2]) if source_links else "Unknown"
                 lines.append(f"⚪ **{entity} | {title_text}**")
                 lines.append(f"> 🏷️ {cat} | 📅 {date} | 📰 {sources_str_w}")
@@ -1657,7 +1670,7 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                     for s in sources_list:
                         if isinstance(s, dict):
                             url_val = str(s.get("url", "")).strip()
-                            if url_val.lower().startswith("http"):
+                            if cls._is_clean_source_url(url_val):
                                 clean_link = url_val
                                 break
                 title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
@@ -1701,7 +1714,7 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                     for s in sources_list:
                         if isinstance(s, dict):
                             url_val = str(s.get("url", "")).strip()
-                            if url_val.lower().startswith("http"):
+                            if cls._is_clean_source_url(url_val):
                                 clean_link = url_val
                                 break
                 title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
@@ -1805,7 +1818,7 @@ is_valid_practice 为 false 的条目也必须输出，以便审计追踪。
                             src_url = str(s.get("url", "")).strip()
                             if name and name not in seen_labels:
                                 seen_labels.add(name)
-                                if src_url and src_url.startswith("http"):
+                                if cls._is_clean_source_url(src_url):
                                     source_links.append(f"[{name}]({src_url})")
                                 else:
                                     source_links.append(name)
@@ -2109,7 +2122,7 @@ Output only valid JSON array, no markdown."""
                     quality = cls._source_quality_label(name, src_url)
                     lang_suffix = f"/{s_lang}" if s_lang else ""
                     label = f"{name} ({quality}{lang_suffix})"
-                    if src_url and src_url.lower().startswith("http"):
+                    if cls._is_clean_source_url(src_url):
                         source_links.append(f"[{label}]({src_url})")
                     else:
                         source_links.append(label)
@@ -2250,13 +2263,14 @@ Output only valid JSON array, no markdown."""
                 basis = str(e.get("materiality_basis", "")).strip() or "公开信息指向材料端直接传导"
 
                 clean_link = str(e.get("url") or e.get("link") or "").strip()
-                if not clean_link.lower().startswith("http"):
+                if not cls._is_clean_source_url(clean_link):
+                    clean_link = ""
                     sources_list = e.get("sources", [])
                     if isinstance(sources_list, list):
                         for s in sources_list:
                             if isinstance(s, dict):
                                 url_val = str(s.get("url", "")).strip()
-                                if url_val.lower().startswith("http"):
+                                if cls._is_clean_source_url(url_val):
                                     clean_link = url_val
                                     break
                 title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
@@ -2297,13 +2311,14 @@ Output only valid JSON array, no markdown."""
                 insight = str(e.get("executive_insight", "")).strip()
 
                 clean_link = str(e.get("url") or e.get("link") or "").strip()
-                if not clean_link.lower().startswith("http"):
+                if not cls._is_clean_source_url(clean_link):
+                    clean_link = ""
                     sources_list = e.get("sources", [])
                     if isinstance(sources_list, list):
                         for s in sources_list:
                             if isinstance(s, dict):
                                 url_val = str(s.get("url", "")).strip()
-                                if url_val.lower().startswith("http"):
+                                if cls._is_clean_source_url(url_val):
                                     clean_link = url_val
                                     break
                 title_link = f"[{title_text}]({clean_link})" if clean_link else title_text
@@ -2400,7 +2415,7 @@ Output only valid JSON array, no markdown."""
                     for s in sources_list:
                         if isinstance(s, dict):
                             url_val = str(s.get("url", "")).strip()
-                            if url_val.lower().startswith("http"):
+                            if cls._is_clean_source_url(url_val):
                                 clean_link = url_val
                                 break
                 title_link = f"[{title_text}]({clean_link})" if clean_link else title_text

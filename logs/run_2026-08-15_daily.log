@@ -1,0 +1,46 @@
+22:29:39 [INFO] 运行日志写入: logs/run_2026-08-15_daily.log
+22:29:39 [INFO] ═══ ESG Intelligence Agent v9 | Mode: DAILY ═══
+22:29:39 [INFO] Building query tasks for mode=daily: 4 topics, 12 companies, 5 geo tracks
+22:29:39 [INFO]   Daily mode: skipping premium global tracks (EFRAG)
+22:29:39 [INFO] Total query tasks generated: 252
+22:29:39 [INFO] Query tasks: 252 (mode=daily)
+22:29:39 [INFO] Cheap LLM provider initialized: deepseek(deepseek-chat)
+22:29:42 [INFO] [AI发现] 生成了 10 条动态搜索查询: ['(Congo OR DRC OR Zambia) cobalt mining accident OR child labor OR forced labor 2026', 'Indonesia nickel smelter labor dispute OR environmental violation 2026', 'lithium mine Chile OR Argentina OR Bolivia community protest OR water rights 2026']...
+22:29:42 [INFO] AI discovery: generated 10 dynamic queries
+22:30:21 [INFO] Phase 1 totals: 35 static + 70 dynamic + 0 ai-discovery = 105 items
+22:30:21 [INFO] Phase 1: Sourcing Engine 返回了 105 条有效纯净数据。
+22:30:21 [INFO] Phase 2 dedup (title+norm_url): 105 -> 96 articles
+22:30:21 [INFO] Phase 3: Extracting body text from 96 articles (concurrent)...
+22:30:22 [INFO]   Progress: 20/96
+22:30:24 [INFO]   Progress: 40/96
+22:30:27 [INFO]   Progress: 60/96
+22:30:31 [INFO]   Progress: 80/96
+22:30:42 [INFO] Phase 3 done. Body text extracted: 0/96
+22:30:42 [INFO] Phase 2.5 entity filter: 96 -> 96
+22:30:42 [INFO] Phase 2.6 per-company throttle (max 20/firm): 96 -> 20
+22:30:42 [INFO] Phase 4: 已将 20 条通过校验的 URL 增量保存至去重记忆库。
+22:30:42 [INFO] LLM processing: 20 articles -> 2 batch(es) (BATCH_SIZE=15, mode=daily)
+22:30:42 [INFO]   Batch 1/2: articles #1-15 (15 items)
+22:30:42 [INFO] LLM provider initialized: deepseek(deepseek-chat)
+22:30:58 [INFO]   LLM response received (9334 chars).
+22:30:58 [WARNING] _extract_events_object: JSON parse failed.
+22:30:58 [WARNING]   ⚠ Batch 1 failed JSON extraction/validation — DISCARDING 15 articles to prevent noise pollution.
+22:30:58 [INFO]   Batch 2/2: articles #16-20 (5 items)
+22:31:06 [INFO]   LLM response received (3523 chars).
+22:31:06 [WARNING] _extract_events_object: JSON parse failed.
+22:31:06 [WARNING]   ⚠ Batch 2 failed JSON extraction/validation — DISCARDING 5 articles to prevent noise pollution.
+22:31:06 [INFO] LLM processing complete: 0 total events from 2 batch(es).
+22:31:06 [INFO] Phase 4 done. LLM returned 0 total events (valid + invalid).
+22:31:06 [INFO] Python 降噪与去重完成: 0 invalid 已丢弃 | 0 直接材料冲击 → 主报告 | 0 战略观察 → 观察清单
+22:31:06 [INFO] 今日分析样本 0 篇，命中合规红线 0 篇，执行静默阻断。
+22:31:06 [INFO] 静默阻断占位报告已写入: esg_global_report.md
+22:31:06 [INFO] Phase 5 done. Python pipeline: 0 valid items -> esg_global_report.md
+22:31:06 [INFO] 💰 Token 消耗: in=12,731 out=4,517 total=17,248 cost=$0.0030
+22:31:06 [INFO] Report archived to: reports/2026-08-15_daily.md
+22:31:06 [INFO] PDF written: reports/2026-08-15_daily.pdf (0 elements)
+22:31:06 [INFO] PDF archived to: reports/2026-08-15_daily.pdf
+22:31:06 [INFO] All done in 86.3s | 0 valid items | ? ~ ?
+22:31:06 [INFO] 今日无风险事件，发送「无风险」心跳通知。
+22:31:06 [INFO] 正在向钉钉发送情报简报...
+22:31:07 [INFO] 钉钉推送成功
+22:31:07 [INFO] 无风险事件，跳过 Notion 推送。

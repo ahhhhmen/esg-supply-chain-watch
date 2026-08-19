@@ -1,0 +1,85 @@
+22:12:39 [INFO] 运行日志写入: logs/run_2026-08-19_practice.log
+22:12:39 [INFO] ═══ ESG Intelligence Agent v9 | Mode: PRACTICE ═══
+22:12:39 [INFO] Building query tasks for mode=practice: 5 practice topics, 12 practice companies, 5 geo tracks
+22:12:39 [INFO] Total query tasks generated: 300
+22:12:39 [INFO] Query tasks: 300 (mode=practice)
+22:15:17 [INFO] Phase 1 totals: 325 static + 799 dynamic + 0 ai-discovery = 1124 items
+22:15:17 [INFO] Phase 1: Sourcing Engine 返回了 1124 条有效纯净数据。
+22:15:17 [INFO] Phase 2 dedup (title+norm_url): 1124 -> 1032 articles
+22:15:17 [INFO] Phase 3: Extracting body text from 1032 articles (concurrent)...
+22:15:18 [INFO]   Progress: 20/1032
+22:15:19 [INFO]   Progress: 40/1032
+22:15:19 [INFO]   Progress: 60/1032
+22:15:20 [INFO]   Progress: 80/1032
+22:15:20 [INFO]   Progress: 100/1032
+22:15:20 [INFO]   Progress: 120/1032
+22:15:20 [INFO]   Progress: 140/1032
+22:15:21 [INFO]   Progress: 160/1032
+22:15:21 [INFO]   Progress: 180/1032
+22:15:22 [INFO]   Progress: 200/1032
+22:15:22 [INFO]   Progress: 220/1032
+22:15:23 [INFO]   Progress: 240/1032
+22:15:24 [INFO]   Progress: 260/1032
+22:15:24 [INFO]   Progress: 280/1032
+22:15:25 [INFO]   Progress: 300/1032
+22:15:27 [INFO]   Progress: 320/1032
+22:15:28 [INFO]   Progress: 340/1032
+22:15:31 [INFO]   Progress: 360/1032
+22:15:35 [INFO]   Progress: 380/1032
+22:15:40 [INFO]   Progress: 400/1032
+22:15:44 [INFO]   Progress: 420/1032
+22:15:49 [INFO]   Progress: 440/1032
+22:15:51 [INFO]   Progress: 460/1032
+22:15:54 [INFO]   Progress: 480/1032
+22:15:57 [INFO]   Progress: 500/1032
+22:16:03 [INFO]   Progress: 520/1032
+22:16:07 [INFO]   Progress: 540/1032
+22:16:13 [INFO]   Progress: 560/1032
+22:16:17 [INFO]   Progress: 580/1032
+22:16:19 [INFO]   Progress: 600/1032
+22:16:21 [INFO]   Progress: 620/1032
+22:16:25 [INFO]   Progress: 640/1032
+22:16:28 [INFO]   Progress: 660/1032
+22:16:32 [INFO]   Progress: 680/1032
+22:16:49 [INFO]   Progress: 700/1032
+22:17:05 [INFO]   Progress: 720/1032
+22:17:11 [INFO]   Progress: 740/1032
+22:17:14 [INFO]   Progress: 760/1032
+22:17:17 [INFO]   Progress: 780/1032
+22:17:20 [INFO]   Progress: 800/1032
+22:17:25 [INFO]   Progress: 820/1032
+22:17:28 [INFO]   Progress: 840/1032
+22:17:30 [INFO]   Progress: 860/1032
+22:17:33 [INFO]   Progress: 880/1032
+22:17:35 [INFO]   Progress: 900/1032
+22:17:37 [INFO]   Progress: 920/1032
+22:17:38 [INFO]   Progress: 940/1032
+22:17:41 [INFO]   Progress: 960/1032
+22:17:46 [INFO]   Progress: 980/1032
+22:17:51 [INFO]   Progress: 1000/1032
+22:17:55 [INFO]   Progress: 1020/1032
+22:18:26 [INFO] Phase 3 done. Body text extracted: 0/1032
+22:18:26 [INFO] Phase 2.4 spam filter: 1032 -> 1030 (2 spam)
+22:18:26 [INFO] Phase 2.5 entity filter: 1030 -> 1030
+22:18:26 [INFO] Phase 2.6 per-company throttle (max 20/firm): 1030 -> 20
+22:18:26 [INFO] Phase 4: 已将 20 条通过校验的 URL 增量保存至去重记忆库。
+22:18:26 [INFO] LLM processing: 20 articles -> 2 batch(es) (BATCH_SIZE=15, mode=practice)
+22:18:26 [INFO]   Batch 1/2: articles #1-15 (15 items)
+22:18:26 [INFO] LLM provider initialized: deepseek(deepseek-chat)
+22:18:30 [WARNING]   ⚠ Batch 1 LLM call returned None — DISCARDING 15 articles.
+22:18:30 [INFO]   Batch 2/2: articles #16-20 (5 items)
+22:18:34 [WARNING]   ⚠ Batch 2 LLM call returned None — DISCARDING 5 articles.
+22:18:34 [INFO] LLM processing complete: 0 total events from 2 batch(es).
+22:18:34 [INFO] Phase 4 done. LLM returned 0 total events (valid + invalid).
+22:18:34 [INFO] Practice 降噪: 0 invalid -> dropped, 0 valid -> report
+22:18:34 [INFO] Practice report written: esg_practice_report.md (0 valid)
+22:18:34 [INFO] Phase 5 done. Python pipeline: 0 valid items -> esg_practice_report.md
+22:18:34 [INFO] 💰 Token 消耗: in=0 out=0 total=0 cost=$0.0000
+22:18:34 [INFO] Report archived to: reports/2026-08-19_practice.md
+22:18:34 [INFO] PDF written: reports/2026-08-19_practice.pdf (0 elements)
+22:18:34 [INFO] PDF archived to: reports/2026-08-19_practice.pdf
+22:18:34 [INFO] All done in 355.4s | 0 valid items | ? ~ ?
+22:18:34 [INFO] 本周无实践事件，发送「无实践」心跳通知。
+22:18:34 [INFO] 正在向钉钉发送情报简报...
+22:18:36 [INFO] 钉钉推送成功
+22:18:36 [INFO] 无实践事件，跳过 Practice Notion 推送。

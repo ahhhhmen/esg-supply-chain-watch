@@ -1,0 +1,80 @@
+22:32:53 [INFO] 运行日志写入: logs/run_2026-08-20_weekly.log
+22:32:53 [INFO] ═══ ESG Intelligence Agent v9 | Mode: WEEKLY ═══
+22:32:53 [INFO] Building query tasks for mode=weekly: 7 topics, 12 companies, 5 geo tracks
+22:32:53 [INFO]   Weekly mode: enabled 1 premium global track(s)
+22:32:53 [INFO] Total query tasks generated: 433
+22:32:53 [INFO] Query tasks: 433 (mode=weekly)
+22:32:54 [INFO] Cheap LLM provider initialized: deepseek(deepseek-chat)
+22:36:07 [INFO] Phase 1 totals: 316 static + 567 dynamic + 0 ai-discovery = 883 items
+22:36:07 [INFO] Phase 1: Sourcing Engine 返回了 883 条有效纯净数据。
+22:36:07 [INFO] Phase 2 dedup (title+norm_url): 883 -> 824 articles
+22:36:07 [INFO] Phase 3: Extracting body text from 824 articles (concurrent)...
+22:36:09 [INFO]   Progress: 20/824
+22:36:10 [INFO]   Progress: 40/824
+22:36:10 [INFO]   Progress: 60/824
+22:36:10 [INFO]   Progress: 80/824
+22:36:11 [INFO]   Progress: 100/824
+22:36:11 [INFO]   Progress: 120/824
+22:36:11 [INFO]   Progress: 140/824
+22:36:12 [INFO]   Progress: 160/824
+22:36:13 [INFO]   Progress: 180/824
+22:36:15 [INFO]   Progress: 200/824
+22:36:16 [INFO]   Progress: 220/824
+22:36:16 [INFO]   Progress: 240/824
+22:36:18 [INFO]   Progress: 260/824
+22:36:18 [INFO]   Progress: 280/824
+22:36:19 [INFO]   Progress: 300/824
+22:36:20 [INFO]   Progress: 320/824
+22:36:25 [INFO]   Progress: 340/824
+22:36:35 [INFO]   Progress: 360/824
+22:36:39 [INFO]   Progress: 380/824
+22:36:40 [INFO]   Progress: 400/824
+22:36:42 [INFO]   Progress: 420/824
+22:36:44 [INFO]   Progress: 440/824
+22:36:46 [INFO]   Progress: 460/824
+22:36:49 [INFO]   Progress: 480/824
+22:36:51 [INFO]   Progress: 500/824
+22:36:54 [INFO]   Progress: 520/824
+22:36:59 [INFO]   Progress: 540/824
+22:37:06 [INFO]   Progress: 560/824
+22:37:13 [INFO]   Progress: 580/824
+22:37:17 [INFO]   Progress: 600/824
+22:37:22 [INFO]   Progress: 620/824
+22:37:30 [INFO]   Progress: 640/824
+22:37:34 [INFO]   Progress: 660/824
+22:37:39 [INFO]   Progress: 680/824
+22:37:43 [INFO]   Progress: 700/824
+22:37:51 [INFO]   Progress: 720/824
+22:37:54 [INFO]   Progress: 740/824
+22:37:55 [INFO]   Progress: 760/824
+22:37:58 [INFO]   Progress: 780/824
+22:38:00 [INFO]   Progress: 800/824
+22:38:03 [INFO]   Progress: 820/824
+22:39:48 [INFO] Phase 3 done. Body text extracted: 0/824
+22:39:48 [INFO] Phase 2.4 spam filter: 824 -> 819 (5 spam)
+22:39:48 [INFO] Phase 2.5 entity filter: 819 -> 819
+22:39:48 [INFO] Phase 2.6 per-company throttle (max 20/firm): 819 -> 20
+22:39:48 [INFO] Phase 4: 已将 20 条通过校验的 URL 增量保存至去重记忆库。
+22:39:48 [INFO] LLM processing: 20 articles -> 2 batch(es) (BATCH_SIZE=15, mode=weekly)
+22:39:48 [INFO]   Batch 1/2: articles #1-15 (15 items)
+22:39:48 [INFO] LLM provider initialized: deepseek(deepseek-chat)
+22:39:51 [WARNING]   ⚠ Batch 1 LLM call returned None — DISCARDING 15 articles.
+22:39:51 [INFO]   Batch 2/2: articles #16-20 (5 items)
+22:39:54 [WARNING]   ⚠ Batch 2 LLM call returned None — DISCARDING 5 articles.
+22:39:54 [INFO] LLM processing complete: 0 total events from 2 batch(es).
+22:39:54 [INFO] Phase 4 done. LLM returned 0 total events (valid + invalid).
+22:39:54 [INFO] Python 降噪与去重完成: 0 invalid 已丢弃 | 0 直接材料冲击 → 主报告 | 0 战略观察 → 观察清单
+22:39:54 [INFO] 今日分析样本 0 篇，命中合规红线 0 篇，执行静默阻断。
+22:39:54 [INFO] 静默阻断占位报告已写入: esg_global_report.md
+22:39:54 [INFO] Phase 5 done. Python pipeline: 0 valid items -> esg_global_report.md
+22:39:54 [INFO] [周度审查] 无事件数据，返回空审查占位
+22:39:54 [INFO] 监控矩阵盲区分析已生成，请在后台日志中查看优化建议。
+22:39:54 [INFO] 💰 Token 消耗: in=0 out=0 total=0 cost=$0.0000
+22:39:54 [INFO] Report archived to: reports/2026-08-20_weekly.md
+22:39:54 [INFO] PDF written: reports/2026-08-20_weekly.pdf (0 elements)
+22:39:54 [INFO] PDF archived to: reports/2026-08-20_weekly.pdf
+22:39:54 [INFO] All done in 420.4s | 0 valid items | ? ~ ?
+22:39:54 [INFO] 今日无风险事件，发送「无风险」心跳通知。
+22:39:54 [INFO] 正在向钉钉发送情报简报...
+22:39:55 [INFO] 钉钉推送成功
+22:39:55 [INFO] 无风险事件，跳过 Notion 推送。

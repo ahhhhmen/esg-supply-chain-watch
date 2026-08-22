@@ -3,9 +3,9 @@ name: Global ESG Daily Monitor (Daily)
 # 配置触发时机
 on:
   schedule:
-    # 北京时间每天早上 06:00（周五除外，由周报接管），UTC = BJT-8
-    # UTC 22:00 = BJT 06:00(+1)，跳过周四UTC(对应周五BJT)
-    - cron: '0 22 * * 0-3,5-6'
+    # 降频：每周二、五各运行一次（北京时间 06:00，UTC 22:00）
+    # 原为每天运行（周四除外），降频以控制 API 成本
+    - cron: '0 22 * * 2,5'
   workflow_dispatch:
     # 允许在 GitHub 网页端手动点击运行按钮
 
@@ -18,6 +18,16 @@ jobs:
     # 1. 检出仓库代码
     - name: Checkout Repository Code
       uses: actions/checkout@v4
+
+    # 1.5 恢复 LLM 磁盘缓存（跨运行复用，降低 API 成本）
+    - name: Restore LLM Cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/radar-infra/llm_cache
+        key: llm-cache-${{ runner.os }}-${{ github.repository }}-${{ hashFiles('**/esg_sources.yaml') }}
+        restore-keys: |
+          llm-cache-${{ runner.os }}-${{ github.repository }}-
+          llm-cache-${{ runner.os }}-
 
     # 2. 部署 Python 3.10 环境
     - name: Set up Python 3.10

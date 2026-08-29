@@ -14,3 +14,57 @@
 03:40:20 [INFO] 正在向钉钉发送情报简报...
 03:40:21 [INFO] 钉钉推送成功
 03:40:21 [INFO] 无风险事件，跳过 Notion 推送。
+05:56:34 [INFO] 运行日志写入: logs/run_2026-08-29_daily.log
+05:56:34 [INFO] ═══ ESG Intelligence Agent v9 | Mode: DAILY ═══
+05:56:34 [INFO] Building query tasks for mode=daily: 4 topics, 12 companies, 5 geo tracks
+05:56:34 [INFO]   Daily mode: skipping premium global tracks (EFRAG)
+05:56:34 [INFO] Total query tasks generated: 252
+05:56:34 [INFO] Query tasks: 252 (mode=daily)
+05:56:34 [INFO] Cheap LLM provider initialized: deepseek(deepseek-v4-flash)
+05:56:47 [WARNING] [AI发现] 无法解析查询生成响应 JSON
+05:57:33 [INFO] Phase 1 totals: 87 static + 71 dynamic + 0 ai-discovery = 158 items
+05:57:33 [INFO] Phase 1: Sourcing Engine 返回了 158 条有效纯净数据。
+05:57:33 [INFO] Phase 2 dedup (title+norm_url): 158 -> 155 articles
+05:57:33 [INFO] Phase 3: Extracting body text from 155 articles (concurrent)...
+05:57:34 [INFO]   Progress: 20/155
+05:57:34 [INFO]   Progress: 40/155
+05:57:35 [INFO]   Progress: 60/155
+05:57:37 [INFO]   Progress: 80/155
+05:57:38 [INFO]   Progress: 100/155
+05:57:43 [INFO]   Progress: 120/155
+05:57:56 [INFO]   Progress: 140/155
+05:58:24 [INFO] Phase 3 done. Body text extracted: 0/155
+05:58:24 [INFO] Phase 2.4 spam filter: 155 -> 154 (1 spam)
+05:58:24 [INFO] Phase 2.5 entity filter: 154 -> 154
+05:58:24 [INFO] Phase 2.6 per-company throttle (max 20/firm): 154 -> 20
+05:58:24 [INFO] Phase 4: 已将 20 条通过校验的 URL 增量保存至去重记忆库。
+05:58:24 [INFO] LLM processing: 20 articles -> 2 batch(es) (BATCH_SIZE=15, mode=daily)
+05:58:24 [INFO]   Batch 1/2: articles #1-15 (15 items)
+05:58:24 [INFO] LLM provider initialized: deepseek(deepseek-chat)
+05:58:28 [INFO]   LLM response received (1475 chars).
+05:58:28 [INFO]   Batch 1: 2 events (0 valid) extracted.
+05:58:28 [INFO]   Batch 2/2: articles #16-20 (5 items)
+05:58:35 [INFO]   LLM response received (3307 chars).
+05:58:35 [INFO]   Batch 2: 5 events (0 valid) extracted.
+05:58:35 [INFO] LLM processing complete: 7 total events from 2 batch(es).
+05:58:35 [INFO] Phase 4 done. LLM returned 7 total events (valid + invalid).
+05:58:35 [INFO] [v12 降噪] 已过滤(无效风险): 宝马 | BMW quarterly profit drops 35%, plans 8000 job cuts
+05:58:35 [INFO] [v12 降噪] 已过滤(无效风险): 特斯拉 | Tesla Cybertruck Powershare enables grid power export
+05:58:35 [INFO] [v12 降噪] 已过滤(无效风险): 宏观政策 | MLB ball overturned by ABS review
+05:58:35 [INFO] [v12 降噪] 已过滤(无效风险): 特斯拉 | Tesla new car removes manual control
+05:58:35 [INFO] [v12 降噪] 已过滤(无效风险): 宏观政策 | New electric car charges in under 9 minutes
+05:58:35 [INFO] [v12 降噪] 已过滤(无效风险): 宏观政策 | Kentucky PSC investigates high electricity costs
+05:58:35 [INFO] [v12 降噪] 已过滤(无效风险): 宏观政策 | Time AI 100 list reveals global AI leaders
+05:58:35 [INFO] Python 降噪与去重完成: 7 invalid 已丢弃 | 0 直接材料冲击 → 主报告 | 0 战略观察 → 观察清单
+05:58:35 [INFO] 今日分析样本 7 篇，命中合规红线 0 篇，执行静默阻断。
+05:58:35 [INFO] 静默阻断占位报告已写入: esg_global_report.md
+05:58:35 [INFO] Phase 5 done. Python pipeline: 0 valid items -> esg_global_report.md
+05:58:35 [INFO] 💰 Token 消耗: in=12,544 out=2,583 total=15,127 cost=$0.0026
+05:58:35 [INFO] Report archived to: reports/2026-08-29_daily.md
+05:58:35 [INFO] PDF written: reports/2026-08-29_daily.pdf (0 elements)
+05:58:35 [INFO] PDF archived to: reports/2026-08-29_daily.pdf
+05:58:35 [INFO] All done in 121.2s | 0 valid items | ? ~ ?
+05:58:35 [INFO] 今日无风险事件，发送「无风险」心跳通知。
+05:58:35 [INFO] 正在向钉钉发送情报简报...
+05:58:37 [INFO] 钉钉推送成功
+05:58:37 [INFO] 无风险事件，跳过 Notion 推送。

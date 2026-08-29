@@ -1,0 +1,16 @@
+03:35:29 [INFO] 运行日志写入: logs/run_2026-08-29_daily.log
+03:35:29 [INFO] ═══ ESG Intelligence Agent v9 | Mode: DAILY ═══
+03:35:29 [INFO] Building query tasks for mode=daily: 4 topics, 12 companies, 5 geo tracks
+03:35:30 [INFO]   Daily mode: skipping premium global tracks (EFRAG)
+03:35:30 [INFO] Total query tasks generated: 252
+03:35:30 [INFO] Query tasks: 252 (mode=daily)
+03:35:30 [INFO] Cheap LLM provider initialized: deepseek(deepseek-v4-flash)
+03:40:20 [INFO] Phase 1 totals: 0 static + 0 dynamic + 0 ai-discovery = 0 items
+03:40:20 [INFO] Phase 1: Sourcing Engine 返回了 0 条有效纯净数据。
+03:40:20 [ERROR] [SYSTEM_ALERT] 🚨 [FATAL级警报] ESG雷达抓取源严重失效触发零数据熔断。今日抓取量为0，请立刻排查网络节点或RSS解析器状态！
+03:40:20 [INFO] 零数据占位报告已写入: esg_global_report.md
+03:40:20 [INFO] 💰 Token 消耗: in=0 out=0 total=0 cost=$0.0000
+03:40:20 [INFO] 今日无风险事件，发送「无风险」心跳通知。
+03:40:20 [INFO] 正在向钉钉发送情报简报...
+03:40:21 [INFO] 钉钉推送成功
+03:40:21 [INFO] 无风险事件，跳过 Notion 推送。

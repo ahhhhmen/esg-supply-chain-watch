@@ -1,4 +1,5 @@
 beautifulsoup4
+lxml
 certifi==2025.1.31
 feedparser==6.0.12
 google-generativeai==0.8.4

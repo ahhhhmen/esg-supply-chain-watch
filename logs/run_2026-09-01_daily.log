@@ -1,0 +1,46 @@
+23:54:15 [INFO] 运行日志写入: logs/run_2026-09-01_daily.log
+23:54:15 [INFO] ═══ ESG Intelligence Agent v9 | Mode: DAILY ═══
+23:54:15 [INFO] Building query tasks for mode=daily: 4 topics, 12 companies, 5 geo tracks
+23:54:15 [INFO]   Daily mode: skipping premium global tracks (EFRAG)
+23:54:15 [INFO] Total query tasks generated: 252
+23:54:15 [INFO] Query tasks: 252 (mode=daily)
+23:54:15 [INFO] Cheap LLM provider initialized: deepseek(deepseek-v4-flash)
+23:55:35 [INFO] Phase 1 totals: 123 static + 95 dynamic + 0 ai-discovery = 218 items
+23:55:35 [INFO] Phase 1: Sourcing Engine 返回了 218 条有效纯净数据。
+23:55:35 [INFO] Phase 2 dedup (title+norm_url): 218 -> 204 articles
+23:55:35 [INFO] Phase 3: Extracting body text from 204 articles (concurrent)...
+23:55:36 [INFO]   Progress: 20/204
+23:55:37 [INFO]   Progress: 40/204
+23:55:37 [INFO]   Progress: 60/204
+23:55:38 [INFO]   Progress: 80/204
+23:55:39 [INFO]   Progress: 100/204
+23:55:40 [INFO]   Progress: 120/204
+23:55:42 [INFO]   Progress: 140/204
+23:55:45 [INFO]   Progress: 160/204
+23:55:48 [INFO]   Progress: 180/204
+23:55:50 [INFO]   Progress: 200/204
+23:56:31 [INFO] Phase 3 done. Body text extracted: 110/204
+23:56:31 [INFO] Phase 2.5 entity filter: 204 -> 204
+23:56:31 [INFO] Phase 2.6 per-company throttle (max 20/firm): 204 -> 20
+23:56:31 [INFO] Phase 4: 已将 20 条通过校验的 URL 增量保存至去重记忆库。
+23:56:31 [INFO] LLM processing: 20 articles -> 2 batch(es) (BATCH_SIZE=15, mode=daily)
+23:56:31 [INFO]   Batch 1/2: articles #1-15 (15 items)
+23:56:31 [INFO] LLM provider initialized: deepseek(deepseek-chat)
+23:56:35 [WARNING]   ⚠ Batch 1 LLM call returned None — DISCARDING 15 articles.
+23:56:35 [INFO]   Batch 2/2: articles #16-20 (5 items)
+23:56:39 [WARNING]   ⚠ Batch 2 LLM call returned None — DISCARDING 5 articles.
+23:56:39 [INFO] LLM processing complete: 0 total events from 2 batch(es).
+23:56:39 [INFO] Phase 4 done. LLM returned 0 total events (valid + invalid).
+23:56:39 [INFO] Python 降噪与去重完成: 0 invalid 已丢弃 | 0 直接材料冲击 → 主报告 | 0 战略观察 → 观察清单
+23:56:39 [INFO] 今日分析样本 0 篇，命中合规红线 0 篇，执行静默阻断。
+23:56:39 [INFO] 静默阻断占位报告已写入: esg_global_report.md
+23:56:39 [INFO] Phase 5 done. Python pipeline: 0 valid items -> esg_global_report.md
+23:56:39 [INFO] 💰 Token 消耗: in=0 out=0 total=0 cost=$0.0000
+23:56:39 [INFO] Report archived to: reports/2026-09-01_daily.md
+23:56:39 [INFO] PDF written: reports/2026-09-01_daily.pdf (0 elements)
+23:56:39 [INFO] PDF archived to: reports/2026-09-01_daily.pdf
+23:56:39 [INFO] All done in 143.7s | 0 valid items | ? ~ ?
+23:56:39 [INFO] 今日无风险事件，发送「无风险」心跳通知。
+23:56:39 [INFO] 正在向钉钉发送情报简报...
+23:56:41 [INFO] 钉钉推送成功
+23:56:41 [INFO] 无风险事件，跳过 Notion 推送。
